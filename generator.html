@@ -2,155 +2,203 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Mark Six Analyzer (DB Version)</title>
+<title>Mark Six Analyzer</title>
 <style>
 body { font-family: Arial; padding: 20px; }
-input { width: 400px; }
-button { padding: 8px 16px; margin-top: 10px; }
+input[type="text"] { width: 400px; }
+input[type="number"] { width: 80px; }
+button { padding: 8px 16px; margin-top: 10px; margin-bottom: 10px; }
 pre { background: #f0f0f0; padding: 10px; }
+table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+th { background: #eee; }
 .rangeBox { margin-bottom: 10px; }
 </style>
 </head>
 <body>
 
-<h2>📌 Step 1：讀取 GitHub JSON</h2>
-<input id="jsonUrl" placeholder="https://yumathk.github.io/mark6checker/results.json">
+<h2>📌 Step 1：讀取 GitHub JSON（results.json）</h2>
+<input id="jsonUrl" type="text" placeholder="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json">
 <br>
 <button onclick="loadJson()">讀取 JSON</button>
 
-<h3>讀取結果：</h3>
-<pre id="parsedOutput"></pre>
+<div id="parsedOutput"></div>
 
 <hr>
 
-<h2>📌 Step 2：設定冷熱門檻</h2>
+<h2>📌 Step 2：設定冷熱門檻並計算</h2>
 Hot ≥ <input id="hotTh" type="number" value="5">
 Cold ≤ <input id="coldTh" type="number" value="3">
+<br>
 <button onclick="calcHotCold()">計算冷熱</button>
 
-<h3>冷熱結果：</h3>
-<pre id="hotcoldOutput"></pre>
+<div id="hotcoldOutput"></div>
 
 <hr>
 
-<h2>📌 Step 3：設定區間</h2>
+<h2>📌 Step 3：設定區間並計算區間熱度</h2>
 
 <div class="rangeBox">
-Range A：<input id="a1" value="1"> – <input id="a2" value="20">
+Range A：<input id="a1" type="number" value="1"> – <input id="a2" type="number" value="20">
 </div>
 
 <div class="rangeBox">
-Range B：<input id="b1" value="31"> – <input id="b2" value="40">
+Range B：<input id="b1" type="number" value="31"> – <input id="b2" type="number" value="40">
 </div>
 
 <button onclick="calcRanges()">計算區間熱度</button>
 
-<h3>區間結果：</h3>
-<pre id="rangeOutput"></pre>
+<div id="rangeOutput"></div>
 
 <hr>
 
-<h2>📌 Step 4：Pattern 生成器（不含號碼）</h2>
+<h2>📌 Step 4：Pattern 生成器（只生成結構，不含號碼）</h2>
 
 <h3>前 20 注（進取）</h3>
-Range A：<input id="faH" value="2"> 熱 + <input id="faC" value="1"> 冷  
+Range A：<input id="faH" type="number" value="2"> 熱 + <input id="faC" type="number" value="1"> 冷  
 <br>
-Range B：<input id="fbH" value="2"> 熱 + <input id="fbC" value="1"> 冷  
+Range B：<input id="fbH" type="number" value="2"> 熱 + <input id="fbC" type="number" value="1"> 冷  
 
 <h3>後 20 注（防守）</h3>
-Range A：<input id="saH" value="1"> 熱 + <input id="saC" value="2"> 冷  
+Range A：<input id="saH" type="number" value="1"> 熱 + <input id="saC" type="number" value="2"> 冷  
 <br>
-Range B：<input id="sbH" value="1"> 熱 + <input id="sbC" value="2"> 冷  
+Range B：<input id="sbH" type="number" value="1"> 熱 + <input id="sbC" type="number" value="2"> 冷  
 
 <br><br>
-生成 <input id="rowsN" value="40"> 行 Pattern  
-<button onclick="genPattern()">生成</button>
+生成 <input id="rowsN" type="number" value="40"> 行 Pattern  
+<button onclick="genPattern()">生成 Pattern</button>
 
-<h3>Pattern 結構：</h3>
-<pre id="patternOutput"></pre>
+<div id="patternOutput"></div>
 
 <script>
 let results = [];
 
+// Step 1：讀取 JSON 並以表格顯示
 async function loadJson() {
-    const url = document.getElementById("jsonUrl").value;
-    try {
-        const res = await fetch(url);
-        results = await res.json();
-        document.getElementById("parsedOutput").textContent =
-            JSON.stringify(results, null, 2);
-    } catch (e) {
-        document.getElementById("parsedOutput").textContent =
-            "❌ 無法讀取 JSON：\n" + e;
-    }
+  const url = document.getElementById("jsonUrl").value;
+  const out = document.getElementById("parsedOutput");
+  out.innerHTML = "";
+  try {
+    const res = await fetch(url);
+    results = await res.json();
+
+    let html = "<h3>最新結果（表格顯示）</h3>";
+    html += "<table><tr><th>Date</th><th>Numbers</th><th>Special</th></tr>";
+    results.forEach(r => {
+      html += `<tr>
+        <td>${r.date}</td>
+        <td>${r.numbers.join(", ")}</td>
+        <td>${r.special}</td>
+      </tr>`;
+    });
+    html += "</table>";
+    out.innerHTML = html;
+  } catch (e) {
+    out.innerHTML = "<pre>❌ 無法讀取 JSON：\n" + e + "</pre>";
+  }
 }
 
+// Step 2：冷熱計算
 function calcHotCold() {
-    let freq = Array(50).fill(0);
+  if (!results.length) {
+    document.getElementById("hotcoldOutput").innerHTML = "<pre>⚠️ 尚未載入 JSON</pre>";
+    return;
+  }
 
-    results.forEach(r => {
-        r.numbers.forEach(n => freq[n]++);
+  let freq = Array(50).fill(0);
+  results.forEach(r => {
+    r.numbers.forEach(n => {
+      if (n >= 1 && n <= 49) freq[n]++;
     });
+  });
 
-    const hotTh = parseInt(document.getElementById("hotTh").value);
-    const coldTh = parseInt(document.getElementById("coldTh").value);
+  const hotTh = parseInt(document.getElementById("hotTh").value);
+  const coldTh = parseInt(document.getElementById("coldTh").value);
 
-    let hot = [], cold = [], mid = [];
-    for (let i=1;i<=49;i++){
-        if (freq[i] >= hotTh) hot.push(i);
-        else if (freq[i] <= coldTh) cold.push(i);
-        else mid.push(i);
-    }
+  let hot = [], cold = [], mid = [];
+  for (let i = 1; i <= 49; i++) {
+    if (freq[i] >= hotTh) hot.push(i);
+    else if (freq[i] <= coldTh) cold.push(i);
+    else mid.push(i);
+  }
 
-    document.getElementById("hotcoldOutput").textContent =
-        "🔥 熱碼: " + JSON.stringify(hot) + "\n\n" +
-        "❄️ 冷碼: " + JSON.stringify(cold) + "\n\n" +
-        "中間碼: " + JSON.stringify(mid);
+  let html = "<h3>冷熱結果</h3>";
+  html += "<pre>";
+  html += "🔥 熱碼: " + JSON.stringify(hot) + "\n\n";
+  html += "❄️ 冷碼: " + JSON.stringify(cold) + "\n\n";
+  html += "中間碼: " + JSON.stringify(mid) + "\n";
+  html += "</pre>";
+
+  document.getElementById("hotcoldOutput").innerHTML = html;
 }
 
+// Step 3：區間熱度計算
 function calcRanges() {
-    const a1 = parseInt(document.getElementById("a1").value);
-    const a2 = parseInt(document.getElementById("a2").value);
-    const b1 = parseInt(document.getElementById("b1").value);
-    const b2 = parseInt(document.getElementById("b2").value);
+  if (!results.length) {
+    document.getElementById("rangeOutput").innerHTML = "<pre>⚠️ 尚未載入 JSON</pre>";
+    return;
+  }
 
-    let rangeA = 0, rangeB = 0;
+  const a1 = parseInt(document.getElementById("a1").value);
+  const a2 = parseInt(document.getElementById("a2").value);
+  const b1 = parseInt(document.getElementById("b1").value);
+  const b2 = parseInt(document.getElementById("b2").value);
 
-    results.forEach(r => {
-        r.numbers.forEach(n => {
-            if (n>=a1 && n<=a2) rangeA++;
-            if (n>=b1 && n<=b2) rangeB++;
-        });
+  let rangeA = 0, rangeB = 0;
+
+  results.forEach(r => {
+    r.numbers.forEach(n => {
+      if (n >= a1 && n <= a2) rangeA++;
+      if (n >= b1 && n <= b2) rangeB++;
     });
+  });
 
-    document.getElementById("rangeOutput").textContent =
-        `Range A (${a1}-${a2}) 出現次數：${rangeA}\n` +
-        `Range B (${b1}-${b2}) 出現次數：${rangeB}`;
+  let html = "<h3>區間結果</h3>";
+  html += "<pre>";
+  html += `Range A (${a1}-${a2}) 出現次數：${rangeA}\n`;
+  html += `Range B (${b1}-${b2}) 出現次數：${rangeB}\n`;
+  html += "</pre>";
+
+  document.getElementById("rangeOutput").innerHTML = html;
 }
 
+// Step 4：Pattern 生成（用表格顯示）
 function genPattern() {
-    const N = parseInt(document.getElementById("rowsN").value);
+  const N = parseInt(document.getElementById("rowsN").value);
 
-    const faH = document.getElementById("faH").value;
-    const faC = document.getElementById("faC").value;
-    const fbH = document.getElementById("fbH").value;
-    const fbC = document.getElementById("fbC").value;
+  const faH = document.getElementById("faH").value;
+  const faC = document.getElementById("faC").value;
+  const fbH = document.getElementById("fbH").value;
+  const fbC = document.getElementById("fbC").value;
 
-    const saH = document.getElementById("saH").value;
-    const saC = document.getElementById("saC").value;
-    const sbH = document.getElementById("sbH").value;
-    const sbC = document.getElementById("sbC").value;
+  const saH = document.getElementById("saH").value;
+  const saC = document.getElementById("saC").value;
+  const sbH = document.getElementById("sbH").value;
+  const sbC = document.getElementById("sbC").value;
 
-    let out = "";
-    for (let i=1;i<=N;i++){
-        if (i<=20){
-            out += `Row ${i}: A(${faH}H+${faC}C), B(${fbH}H+${fbC}C)\n`;
-        } else {
-            out += `Row ${i}: A(${saH}H+${saC}C), B(${sbH}H+${sbC}C)\n`;
-        }
+  let html = "<h3>Pattern 結構</h3>";
+  html += "<table><tr><th>Row</th><th>Range A</th><th>Range B</th><th>Type</th></tr>";
+
+  for (let i = 1; i <= N; i++) {
+    if (i <= 20) {
+      html += `<tr>
+        <td>${i}</td>
+        <td>${faH}H + ${faC}C</td>
+        <td>${fbH}H + ${fbC}C</td>
+        <td>前 20（進取）</td>
+      </tr>`;
+    } else {
+      html += `<tr>
+        <td>${i}</td>
+        <td>${saH}H + ${saC}C</td>
+        <td>${sbH}H + ${sbC}C</td>
+        <td>後 20（防守）</td>
+      </tr>`;
     }
+  }
 
-    document.getElementById("patternOutput").textContent = out;
+  html += "</table>";
+  document.getElementById("patternOutput").innerHTML = html;
 }
 </script>
 
