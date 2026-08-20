@@ -80,15 +80,19 @@ function pick(arr, count) {
   return out;
 }
 
-// Step 1：讀取 JSON
+// Step 1：讀取 JSON（只取前 30 行）
 async function loadJson() {
   const url = document.getElementById("jsonUrl").value;
   const out = document.getElementById("parsedOutput");
   out.innerHTML = "";
   try {
     const res = await fetch(url);
-    results = await res.json();
-    let html = "<h3>最新結果</h3><table><tr><th>Date</th><th>Numbers</th><th>Special</th></tr>";
+    let full = await res.json();
+
+    // ⭐ 只取前 30 行
+    results = full.slice(0, 30);
+
+    let html = "<h3>最新 30 期結果</h3><table><tr><th>Date</th><th>Numbers</th><th>Special</th></tr>";
     results.forEach(r => {
       html += `<tr><td>${r.date}</td><td>${r.numbers.join(", ")}</td><td>${r.special}</td></tr>`;
     });
