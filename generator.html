@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Mark Six Analyzer + Pattern Generator</title>
+<title>Mark Six Pattern Generator</title>
 <style>
 body { font-family: Arial; padding: 20px; }
 input[type="text"] { width: 400px; }
@@ -16,57 +16,70 @@ th { background: #eee; }
 </head>
 <body>
 
-<h2>📌 Step 1：讀取 GitHub JSON（results.json）</h2>
+<h2>📌 Step 1：讀取 GitHub JSON（results.json）</h2>
 <input id="jsonUrl" type="text" placeholder="https://raw.githubusercontent.com/you/repo/main/results.json" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json">
 <br>
-<button onclick="loadJson()">讀取 JSON</button>
+<button onclick="loadJson()">讀取 JSON</button>
 <div id="parsedOutput"></div>
 
 <hr>
 
-<h2>📌 Step 2：設定冷熱門檻並計算</h2>
-Hot ≥ <input id="hotTh" type="number" value="5">
-Cold ≤ <input id="coldTh" type="number" value="3">
+<h2>📌 Step 2：設定冷熱門檻並計算</h2>
+Hot ≥ <input id="hotTh" type="number" value="5">
+Cold ≤ <input id="coldTh" type="number" value="3">
 <br>
 <button onclick="calcHotCold()">計算冷熱</button>
 <div id="hotcoldOutput"></div>
 
 <hr>
 
-<h2>📌 Step 3：設定區間</h2>
+<h2>📌 Step 3：設定區間</h2>
 <div class="rangeBox">
-Range A：<input id="a1" type="number" value="1"> – <input id="a2" type="number" value="20">
+Range A：<input id="a1" type="number" value="1"> – <input id="a2" type="number" value="20">
 </div>
 <div class="rangeBox">
-Range B：<input id="b1" type="number" value="31"> – <input id="b2" type="number" value="40">
+Range B：<input id="b1" type="number" value="31"> – <input id="b2" type="number" value="40">
 </div>
 <button onclick="calcRanges()">計算區間熱度</button>
 <div id="rangeOutput"></div>
 
 <hr>
 
-<h2>📌 Step 4：Pattern + 號碼生成器</h2>
+<h2>📌 Step 4：Pattern + 實際號碼生成器</h2>
 
-<h3>前 20 注（進取）</h3>
-Range A：<input id="faH" type="number" value="2"> 熱 + <input id="faC" type="number" value="1"> 冷  
+<h3>前 N 注（進取）</h3>
+前注數 N：<input id="frontN" type="number" value="20"><br>
+Range A：<input id="faH" type="number" value="2"> 熱 + <input id="faC" type="number" value="1"> 冷  
 <br>
-Range B：<input id="fbH" type="number" value="2"> 熱 + <input id="fbC" type="number" value="1"> 冷  
+Range B：<input id="fbH" type="number" value="2"> 熱 + <input id="fbC" type="number" value="1"> 冷  
 
-<h3>後 20 注（防守）</h3>
-Range A：<input id="saH" type="number" value="1"> 熱 + <input id="saC" type="number" value="2"> 冷  
+<h3>後 M 注（防守）</h3>
+後注數 M：<input id="backM" type="number" value="20"><br>
+Range A：<input id="saH" type="number" value="1"> 熱 + <input id="saC" type="number" value="2"> 冷  
 <br>
-Range B：<input id="sbH" type="number" value="1"> 熱 + <input id="sbC" type="number" value="2"> 冷  
+Range B：<input id="sbH" type="number" value="1"> 熱 + <input id="sbC" type="number" value="2"> 冷  
 
 <br><br>
-生成 <input id="rowsN" type="number" value="40"> 行 Pattern  
-<button onclick="genPattern()">生成 號碼</button>
+<button onclick="genPattern()">生成 N+M 注</button>
 <div id="patternOutput"></div>
 
 <script>
 let results = [];
 let hot = [], cold = [], mid = [];
 
-// Step 1：讀取 JSON
+// Utility: random pick
+function pick(arr, count) {
+  let out = [];
+  let copy = [...arr];
+  for (let i = 0; i < count && copy.length > 0; i++) {
+    let idx = Math.floor(Math.random() * copy.length);
+    out.push(copy[idx]);
+    copy.splice(idx, 1);
+  }
+  return out;
+}
+
+// Step 1：讀取 JSON
 async function loadJson() {
   const url = document.getElementById("jsonUrl").value;
   const out = document.getElementById("parsedOutput");
@@ -76,18 +89,18 @@ async function loadJson() {
     results = await res.json();
     let html = "<h3>最新結果</h3><table><tr><th>Date</th><th>Numbers</th><th>Special</th></tr>";
     results.forEach(r => {
-      html += `<tr><td>${r.date}</td><td>${r.numbers.join(", ")}</td><td>${r.special}</td></tr>`;
+      html += `<tr><td>${r.date}</td><td>${r.numbers.join(", ")}</td><td>${r.special}</td></tr>`;
     });
     html += "</table>";
     out.innerHTML = html;
   } catch (e) {
-    out.innerHTML = "<pre>❌ 無法讀取 JSON：" + e + "</pre>";
+    out.innerHTML = "<pre>❌ 無法讀取 JSON：" + e + "</pre>";
   }
 }
 
-// Step 2：冷熱計算
+// Step 2：冷熱計算
 function calcHotCold() {
-  if (!results.length) return alert("⚠️ 尚未載入 JSON");
+  if (!results.length) return alert("⚠️ 尚未載入 JSON");
 
   let freq = Array(50).fill(0);
   results.forEach(r => r.numbers.forEach(n => freq[n]++));
@@ -103,16 +116,12 @@ function calcHotCold() {
   }
 
   document.getElementById("hotcoldOutput").innerHTML =
-    `<pre>🔥 熱碼：${JSON.stringify(hot)}
-
-❄️ 冷碼：${JSON.stringify(cold)}
-
-中間碼：${JSON.stringify(mid)}</pre>`;
+    `<pre>🔥 熱碼：${JSON.stringify(hot)}\n\n❄️ 冷碼：${JSON.stringify(cold)}\n\n中間碼：${JSON.stringify(mid)}</pre>`;
 }
 
-// Step 3：區間熱度
+// Step 3：區間熱度
 function calcRanges() {
-  if (!results.length) return alert("⚠️ 尚未載入 JSON");
+  if (!results.length) return alert("⚠️ 尚未載入 JSON");
   const a1 = parseInt(document.getElementById("a1").value);
   const a2 = parseInt(document.getElementById("a2").value);
   const b1 = parseInt(document.getElementById("b1").value);
@@ -123,19 +132,22 @@ function calcRanges() {
     if (n >= b1 && n <= b2) rangeB++;
   }));
   document.getElementById("rangeOutput").innerHTML =
-    `<pre>Range A (${a1}-${a2})：${rangeA}
-Range B (${b1}-${b2})：${rangeB}</pre>`;
+    `<pre>Range A (${a1}-${a2})：${rangeA}\nRange B (${b1}-${b2})：${rangeB}</pre>`;
 }
 
-// Step 4：Pattern + 號碼生成
+// Step 4：Pattern + 實際號碼生成
 function genPattern() {
-  if (!hot.length && !cold.length) return alert("⚠️ 請先計算冷熱池");
+  if (!hot.length && !cold.length) return alert("⚠️ 請先計算冷熱池");
 
-  const N = parseInt(document.getElementById("rowsN").value);
+  const frontN = parseInt(document.getElementById("frontN").value);
+  const backM = parseInt(document.getElementById("backM").value);
+  const total = frontN + backM;
+
   const faH = parseInt(document.getElementById("faH").value);
   const faC = parseInt(document.getElementById("faC").value);
   const fbH = parseInt(document.getElementById("fbH").value);
   const fbC = parseInt(document.getElementById("fbC").value);
+
   const saH = parseInt(document.getElementById("saH").value);
   const saC = parseInt(document.getElementById("saC").value);
   const sbH = parseInt(document.getElementById("sbH").value);
@@ -151,39 +163,23 @@ function genPattern() {
   const hotB = hot.filter(n => n >= b1 && n <= b2);
   const coldB = cold.filter(n => n >= b1 && n <= b2);
 
-  let html = "<h3>Pattern + 號碼結果</h3><table><tr><th>Row</th><th>Range A</th><th>Range B</th><th>Type</th></tr>";
+  let html = "<h3>生成結果</h3><table><tr><th>#</th><th>Numbers</th><th>Type</th></tr>";
 
-  for (let i = 1; i <= N; i++) {
-    let type = i <= 20 ? "前 20 (進取)" : "後 20 (防守)";
-    let A = i <= 20 ? pick(hotA, faH).concat(pick(coldA, faC))
-                    : pick(hotA, saH).concat(pick(coldA, saC));
-    let B = i <= 20 ? pick(hotB, fbH).concat(pick(coldB, fbC))
-                    : pick(hotB, sbH).concat(pick(coldB, sbC));
+  for (let i = 1; i <= total; i++) {
+    let type = i <= frontN ? "前 N (進取)" : "後 M (防守)";
+    let A = i <= frontN ? pick(hotA, faH).concat(pick(coldA, faC))
+                        : pick(hotA, saH).concat(pick(coldA, saC));
+    let B = i <= frontN ? pick(hotB, fbH).concat(pick(coldB, fbC))
+                        : pick(hotB, sbH).concat(pick(coldB, sbC));
 
-    // 排序
-    A.sort((a,b) => a-b);
-    B.sort((a,b) => a-b);
+    let nums = A.concat(B).sort((a,b)=>a-b);
 
-    html += `<tr><td>${i}</td><td>${A.join(", ")}</td><td>${B.join(", ")}</td><td>${type}</td></tr>`;
+    html += `<tr><td>${i}</td><td>${nums.join(", ")}</td><td>${type}</td></tr>`;
   }
+
   html += "</table>";
   document.getElementById("patternOutput").innerHTML = html;
 }
-
-// 輔助函數：從陣列中隨機挑選 n 個元素
-function pick(arr, n) {
-  if (n <= 0) return [];
-  if (arr.length <= n) return arr.slice();
-  let result = [];
-  let copy = arr.slice();
-  for (let i = 0; i < n; i++) {
-    let idx = Math.floor(Math.random() * copy.length);
-    result.push(copy[idx]);
-    copy.splice(idx, 1);
-  }
-  return result;
-}
-
 </script>
 
 </body>
