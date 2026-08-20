@@ -92,9 +92,9 @@ async function loadJson() {
     // ⭐ 只取前 30 行
     results = full.slice(0, 30);
 
-    let html = "<h3>最新 30 期結果</h3><table><tr><th>Date</th><th>Numbers</th><th>Special</th></tr>";
-    results.forEach(r => {
-      html += `<tr><td>${r.date}</td><td>${r.numbers.join(", ")}</td><td>${r.special}</td></tr>`;
+    let html = "<h3>最新 30 期結果</h3><table><tr><th>#</th><th>Date</th><th>Numbers</th><th>Special</th></tr>";
+    results.forEach((r, index) => {
+      html += `<tr><td>${index}</td><td>${r.date}</td><td>${r.numbers.join(", ")}</td><td>${r.special}</td></tr>`;
     });
     html += "</table>";
     out.innerHTML = html;
