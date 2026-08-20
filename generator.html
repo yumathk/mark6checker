@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mark Six Analyzer (DB Version)</title>
+<style>
+body { font-family: Arial; padding: 20px; }
+input { width: 400px; }
+button { padding: 8px 16px; margin-top: 10px; }
+pre { background: #f0f0f0; padding: 10px; }
+.rangeBox { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h2>📌 Step 1：讀取 GitHub JSON</h2>
+<input id="jsonUrl" placeholder="https://yumathk.github.io/mark6checker/results.json">
+<br>
+<button onclick="loadJson()">讀取 JSON</button>
+
+<h3>讀取結果：</h3>
+<pre id="parsedOutput"></pre>
+
+<hr>
+
+<h2>📌 Step 2：設定冷熱門檻</h2>
+Hot ≥ <input id="hotTh" type="number" value="5">
+Cold ≤ <input id="coldTh" type="number" value="3">
+<button onclick="calcHotCold()">計算冷熱</button>
+
+<h3>冷熱結果：</h3>
+<pre id="hotcoldOutput"></pre>
+
+<hr>
+
+<h2>📌 Step 3：設定區間</h2>
+
+<div class="rangeBox">
+Range A：<input id="a1" value="1"> – <input id="a2" value="20">
+</div>
+
+<div class="rangeBox">
+Range B：<input id="b1" value="31"> – <input id="b2" value="40">
+</div>
+
+<button onclick="calcRanges()">計算區間熱度</button>
+
+<h3>區間結果：</h3>
+<pre id="rangeOutput"></pre>
+
+<hr>
+
+<h2>📌 Step 4：Pattern 生成器（不含號碼）</h2>
+
+<h3>前 20 注（進取）</h3>
+Range A：<input id="faH" value="2"> 熱 + <input id="faC" value="1"> 冷  
+<br>
+Range B：<input id="fbH" value="2"> 熱 + <input id="fbC" value="1"> 冷  
+
+<h3>後 20 注（防守）</h3>
+Range A：<input id="saH" value="1"> 熱 + <input id="saC" value="2"> 冷  
+<br>
+Range B：<input id="sbH" value="1"> 熱 + <input id="sbC" value="2"> 冷  
+
+<br><br>
+生成 <input id="rowsN" value="40"> 行 Pattern  
+<button onclick="genPattern()">生成</button>
+
+<h3>Pattern 結構：</h3>
+<pre id="patternOutput"></pre>
+
+<script>
+let results = [];
+
+async function loadJson() {
+    const url = document.getElementById("jsonUrl").value;
+    try {
+        const res = await fetch(url);
+        results = await res.json();
+        document.getElementById("parsedOutput").textContent =
+            JSON.stringify(results, null, 2);
+    } catch (e) {
+        document.getElementById("parsedOutput").textContent =
+            "❌ 無法讀取 JSON：\n" + e;
+    }
+}
+
+function calcHotCold() {
+    let freq = Array(50).fill(0);
+
+    results.forEach(r => {
+        r.numbers.forEach(n => freq[n]++);
+    });
+
+    const hotTh = parseInt(document.getElementById("hotTh").value);
+    const coldTh = parseInt(document.getElementById("coldTh").value);
+
+    let hot = [], cold = [], mid = [];
+    for (let i=1;i<=49;i++){
+        if (freq[i] >= hotTh) hot.push(i);
+        else if (freq[i] <= coldTh) cold.push(i);
+        else mid.push(i);
+    }
+
+    document.getElementById("hotcoldOutput").textContent =
+        "🔥 熱碼: " + JSON.stringify(hot) + "\n\n" +
+        "❄️ 冷碼: " + JSON.stringify(cold) + "\n\n" +
+        "中間碼: " + JSON.stringify(mid);
+}
+
+function calcRanges() {
+    const a1 = parseInt(document.getElementById("a1").value);
+    const a2 = parseInt(document.getElementById("a2").value);
+    const b1 = parseInt(document.getElementById("b1").value);
+    const b2 = parseInt(document.getElementById("b2").value);
+
+    let rangeA = 0, rangeB = 0;
+
+    results.forEach(r => {
+        r.numbers.forEach(n => {
+            if (n>=a1 && n<=a2) rangeA++;
+            if (n>=b1 && n<=b2) rangeB++;
+        });
+    });
+
+    document.getElementById("rangeOutput").textContent =
+        `Range A (${a1}-${a2}) 出現次數：${rangeA}\n` +
+        `Range B (${b1}-${b2}) 出現次數：${rangeB}`;
+}
+
+function genPattern() {
+    const N = parseInt(document.getElementById("rowsN").value);
+
+    const faH = document.getElementById("faH").value;
+    const faC = document.getElementById("faC").value;
+    const fbH = document.getElementById("fbH").value;
+    const fbC = document.getElementById("fbC").value;
+
+    const saH = document.getElementById("saH").value;
+    const saC = document.getElementById("saC").value;
+    const sbH = document.getElementById("sbH").value;
+    const sbC = document.getElementById("sbC").value;
+
+    let out = "";
+    for (let i=1;i<=N;i++){
+        if (i<=20){
+            out += `Row ${i}: A(${faH}H+${faC}C), B(${fbH}H+${fbC}C)\n`;
+        } else {
+            out += `Row ${i}: A(${saH}H+${saC}C), B(${sbH}H+${sbC}C)\n`;
+        }
+    }
+
+    document.getElementById("patternOutput").textContent = out;
+}
+</script>
+
+</body>
+</html>
