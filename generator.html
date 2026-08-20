@@ -12,6 +12,7 @@ table { border-collapse: collapse; width: 100%; margin-top: 10px; }
 th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
 th { background: #eee; }
 .rangeBox { margin-bottom: 10px; }
+pre { background: #f0f0f0; padding: 10px; }
 </style>
 </head>
 <body>
@@ -61,7 +62,7 @@ Range B：<input id="sbH" type="number" value="1"> 熱 + <input id="sbC" type="n
 
 <br><br>
 <button onclick="genPattern()">生成 N+M 注</button>
-<div id="patternOutput"></div>
+<pre id="patternOutput"></pre>
 
 <script>
 let results = [];
@@ -135,7 +136,7 @@ function calcRanges() {
     `<pre>Range A (${a1}-${a2})：${rangeA}\nRange B (${b1}-${b2})：${rangeB}</pre>`;
 }
 
-// Step 4：Pattern + 實際號碼生成
+// Step 4：Pattern + 實際號碼生成（純文字）
 function genPattern() {
   if (!hot.length && !cold.length) return alert("⚠️ 請先計算冷熱池");
 
@@ -163,10 +164,9 @@ function genPattern() {
   const hotB = hot.filter(n => n >= b1 && n <= b2);
   const coldB = cold.filter(n => n >= b1 && n <= b2);
 
-  let html = "<h3>生成結果</h3><table><tr><th>#</th><th>Numbers</th><th>Type</th></tr>";
+  let out = "";
 
   for (let i = 1; i <= total; i++) {
-    let type = i <= frontN ? "前 N (進取)" : "後 M (防守)";
     let A = i <= frontN ? pick(hotA, faH).concat(pick(coldA, faC))
                         : pick(hotA, saH).concat(pick(coldA, saC));
     let B = i <= frontN ? pick(hotB, fbH).concat(pick(coldB, fbC))
@@ -174,11 +174,10 @@ function genPattern() {
 
     let nums = A.concat(B).sort((a,b)=>a-b);
 
-    html += `<tr><td>${i}</td><td>${nums.join(", ")}</td><td>${type}</td></tr>`;
+    out += `${i}: ${nums.join(", ")}\n`;
   }
 
-  html += "</table>";
-  document.getElementById("patternOutput").innerHTML = html;
+  document.getElementById("patternOutput").textContent = out;
 }
 </script>
 
