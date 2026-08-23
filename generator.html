@@ -65,6 +65,9 @@ Range B：<input id="b1" type="number" value="31"> – <input id="b2" type="numb
   <option value="trend">趨勢冷熱</option>
   <option value="confirmed">雙重確認（熱/熱 + 冷/冷）</option>
 </select>
+<br>
+<label for="excludeNumbers">排除號碼：</label>
+<input id="excludeNumbers" type="text" placeholder="例如：5, 12, 28">
 
 <h3>前 N 注（進取）</h3>
 前注數 N：<input id="frontN" type="number" value="20"><br>
@@ -238,10 +241,19 @@ function calcRanges() {
 // Step 4：Pattern + 實際號碼生成（純文字）
 function genPattern() {
   const poolType = document.getElementById("poolType").value;
-  const selectedHot = poolType === "trend" ? trendHot
-                    : poolType === "confirmed" ? hotHot : hot;
-  const selectedCold = poolType === "trend" ? trendCold
-                     : poolType === "confirmed" ? coldCold : cold;
+  const excludeText = document.getElementById("excludeNumbers").value.trim();
+  const excludeParts = excludeText ? excludeText.split(",").map(value => value.trim()) : [];
+  const invalidExclude = excludeParts.find(value => !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 49);
+  if (invalidExclude !== undefined) {
+    return alert(`⚠️ 無效排除號碼：${invalidExclude || "空白"}。請用逗號分隔 1 至 49。`);
+  }
+
+  const excluded = new Set(excludeParts.map(Number));
+  const withoutExcluded = numbers => numbers.filter(number => !excluded.has(number));
+  const selectedHot = withoutExcluded(poolType === "trend" ? trendHot
+                    : poolType === "confirmed" ? hotHot : hot);
+  const selectedCold = withoutExcluded(poolType === "trend" ? trendCold
+                     : poolType === "confirmed" ? coldCold : cold);
 
   if (!selectedHot.length && !selectedCold.length) {
     if (poolType === "confirmed") {
@@ -273,7 +285,7 @@ function genPattern() {
   const coldA = selectedCold.filter(n => n >= a1 && n <= a2);
   const hotB = selectedHot.filter(n => n >= b1 && n <= b2);
   const coldB = selectedCold.filter(n => n >= b1 && n <= b2);
-  const fallbackPool = poolType === "trend" ? trendMid : mid;
+  const fallbackPool = withoutExcluded(poolType === "trend" ? trendMid : mid);
   const midA = fallbackPool.filter(n => n >= a1 && n <= a2);
   const midB = fallbackPool.filter(n => n >= b1 && n <= b2);
 
@@ -302,7 +314,7 @@ function genPattern() {
     ])].filter(number => {
       const inRangeA = number >= a1 && number <= a2;
       const inRangeB = number >= b1 && number <= b2;
-      return (inRangeA || inRangeB) && !nums.includes(number);
+      return (inRangeA || inRangeB) && !excluded.has(number) && !nums.includes(number);
     });
     if (nums.length < 6) {
       nums = nums.concat(pick(fallbackNumbers, 6 - nums.length)).sort((a,b)=>a-b);
