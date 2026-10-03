@@ -15,6 +15,11 @@ th { background: #eee; }
 pre { background: #f0f0f0; padding: 10px; }
 .numberButton { padding: 3px 7px; margin: 2px; cursor: pointer; }
 #numberStatsOutput { margin-top: 10px; }
+.resultNumberCell { padding: 0; text-align: center; }
+.resultNumber { display: block; width: 100%; padding: 6px 8px; margin: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.resultNumber:hover { background: #f0f0f0; }
+.resultNumber[aria-pressed="true"] { background: #ffe082; color: #222; font-weight: bold; }
+.resultNumber:focus-visible { outline: 2px solid #147d92; outline-offset: -2px; }
 </style>
 </head>
 <body>
@@ -124,7 +129,7 @@ function showNumberStats(number) {
   const latest15 = results.slice(0, 15);
   const previous15 = results.slice(15, 30);
   const countInResults = group => group.reduce(
-    (count, result) => count + countNumber(result.numbers, number), 0
+    (count, result) => count + countNumber(result.numbers, number) + (result.special === number ? 1 : 0), 0
   );
 
   document.getElementById("numberStatsOutput").innerHTML =
@@ -135,6 +140,19 @@ function showNumberStats(number) {
 }
 
 // Step 1：讀取 JSON（只取前 30 行）
+function highlightResultNumber(number) {
+  const buttons = document.querySelectorAll("#parsedOutput .resultNumber");
+  const selected = document.querySelector(`#parsedOutput .resultNumber[data-number="${number}"]`);
+  const clear = selected && selected.getAttribute("aria-pressed") === "true";
+  buttons.forEach(button => {
+    button.setAttribute("aria-pressed", String(!clear && Number(button.dataset.number) === number));
+  });
+}
+
+function resultNumberCell(number) {
+  return `<td class="resultNumberCell"><button type="button" class="resultNumber" data-number="${number}" aria-pressed="false" onclick="highlightResultNumber(${number})">${number}</button></td>`;
+}
+
 async function loadJson() {
   const url = document.getElementById("jsonUrl").value;
   const out = document.getElementById("parsedOutput");
@@ -149,9 +167,11 @@ async function loadJson() {
     trendHot = []; trendCold = []; trendMid = [];
     hotHot = []; coldCold = [];
 
-    let html = "<h3>最新 30 期結果</h3><table><tr><th>#</th><th>Date</th><th>Numbers</th><th>Special</th></tr>";
+    let html = "<h3>最新 30 期結果</h3><table><tr><th>#</th><th>Date</th>" +
+      Array.from({ length: 6 }, (_, index) => `<th>Number ${index + 1}</th>`).join("") +
+      "<th>Special</th></tr>";
     results.forEach((r, index) => {
-      html += `<tr><td>${index}</td><td>${r.date}</td><td>${r.numbers.join(", ")}</td><td>${r.special}</td></tr>`;
+      html += `<tr><td>${index}</td><td>${r.date}</td>${r.numbers.map(resultNumberCell).join("")}${resultNumberCell(r.special)}</tr>`;
     });
     html += "</table>";
     out.innerHTML = html;
@@ -165,7 +185,7 @@ function calcHotCold() {
   if (!results.length) return alert("⚠️ 尚未載入 JSON");
 
   let freq = Array(50).fill(0);
-  results.forEach(r => r.numbers.forEach(n => freq[n]++));
+  results.forEach(r => [...r.numbers, r.special].forEach(n => freq[n]++));
 
   const hotTh = parseInt(document.getElementById("hotTh").value);
   const coldTh = parseInt(document.getElementById("coldTh").value);
@@ -191,8 +211,8 @@ function calcTrend() {
   const recentFreq = Array(50).fill(0);
   const previousFreq = Array(50).fill(0);
 
-  results.slice(0, 15).forEach(r => r.numbers.forEach(n => recentFreq[n]++));
-  results.slice(15, 30).forEach(r => r.numbers.forEach(n => previousFreq[n]++));
+  results.slice(0, 15).forEach(r => [...r.numbers, r.special].forEach(n => recentFreq[n]++));
+  results.slice(15, 30).forEach(r => [...r.numbers, r.special].forEach(n => previousFreq[n]++));
 
   const trendHotTh = parseInt(document.getElementById("trendHotTh").value, 10);
   const trendColdTh = parseInt(document.getElementById("trendColdTh").value, 10);
