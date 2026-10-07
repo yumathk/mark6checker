@@ -11,6 +11,9 @@ button { padding: 8px 16px; margin-top: 10px; margin-bottom: 10px; }
 table { border-collapse: collapse; width: 100%; margin-top: 10px; }
 th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
 th { background: #eee; }
+.resultsTableScroll { max-height: 800px; overflow: auto; }
+.resultsTableScroll table { margin-top: 0; }
+.resultsTableScroll th { position: sticky; top: 0; z-index: 1; }
 .rangeBox { margin-bottom: 10px; }
 pre { background: #f0f0f0; padding: 10px; }
 .numberButton { padding: 3px 7px; margin: 2px; cursor: pointer; }
@@ -139,7 +142,7 @@ function showNumberStats(number) {
     `前 15 期：${countInResults(previous15)} 次</pre>`;
 }
 
-// Step 1：讀取 JSON（只取前 30 行）
+// Step 1：讀取 JSON
 function highlightResultNumber(number) {
   const buttons = document.querySelectorAll("#parsedOutput .resultNumber");
   const selected = document.querySelector(`#parsedOutput .resultNumber[data-number="${number}"]`);
@@ -167,13 +170,13 @@ async function loadJson() {
     trendHot = []; trendCold = []; trendMid = [];
     hotHot = []; coldCold = [];
 
-    let html = "<h3>最新 30 期結果</h3><table><tr><th>#</th><th>Date</th>" +
+    let html = '<h3>所有歷史結果</h3><div class="resultsTableScroll" tabindex="0" role="region" aria-label="所有歷史結果"><table><thead><tr><th>#</th><th>Date</th>' +
       Array.from({ length: 6 }, (_, index) => `<th>Number ${index + 1}</th>`).join("") +
-      "<th>Special</th></tr>";
-    results.forEach((r, index) => {
+      "<th>Special</th></tr></thead><tbody>";
+    full.forEach((r, index) => {
       html += `<tr><td>${index}</td><td>${r.date}</td>${r.numbers.map(resultNumberCell).join("")}${resultNumberCell(r.special)}</tr>`;
     });
-    html += "</table>";
+    html += "</tbody></table></div>";
     out.innerHTML = html;
   } catch (e) {
     out.innerHTML = "<pre>❌ 無法讀取 JSON：" + e + "</pre>";
