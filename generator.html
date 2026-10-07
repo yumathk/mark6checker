@@ -11,13 +11,28 @@ button { padding: 8px 16px; margin-top: 10px; margin-bottom: 10px; }
 table { border-collapse: collapse; width: 100%; margin-top: 10px; }
 th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
 th { background: #eee; }
-.resultsTableScroll { max-height: 800px; overflow: auto; }
+.resultsTableScroll { height: auto; overflow: auto; }
 .resultsTableScroll table { margin-top: 0; }
 .resultsTableScroll th { position: sticky; top: 0; z-index: 1; }
 .rangeBox { margin-bottom: 10px; }
 pre { background: #f0f0f0; padding: 10px; }
 .numberButton { padding: 3px 7px; margin: 2px; cursor: pointer; }
+.numberButton small { display: block; font-size: 10px; font-weight: normal; color: #555; }
 #numberStatsOutput { margin-top: 10px; }
+#freqBoard { margin-top: 12px; }
+.freqNote { font-size: 13px; color: #444; margin: 6px 0; }
+.freqFilters button { margin-right: 6px; }
+.freqTable { width: auto; min-width: 640px; }
+.freqTable td, .freqTable th { text-align: center; }
+.freqTable tr.warn { background: #fff3cd; }
+.freqTable tr.bothHot { background: #ffd6d6; }
+.freqTable tr.bothCold { background: #d6e9ff; }
+.freqTable tr.rising { background: #e5f6e8; }
+.delta.down { color: #b03; font-weight: 700; }
+.delta.up { color: #0a6b3a; font-weight: 700; }
+td.stale { color: #b03; font-weight: 700; }
+td.fresh { color: #0a6b3a; font-weight: 700; }
+.warnBox { margin: 8px 0; padding: 8px; background: #fff8e6; border: 1px solid #ffe0a3; }
 .resultNumberCell { padding: 0; text-align: center; }
 .resultNumber { display: block; width: 100%; padding: 6px 8px; margin: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .resultNumber:hover { background: #f0f0f0; }
@@ -49,6 +64,7 @@ Cold ≤ <input id="coldTh" type="number" value="3">
 <button onclick="calcTrend()">計算趨勢冷熱</button>
 <div id="trendOutput"></div>
 <div id="intersectionOutput"></div>
+<div id="freqBoard"></div>
 <div id="numberStatsOutput"></div>
 
 <hr>
@@ -98,6 +114,7 @@ let results = [];
 let hot = [], cold = [], mid = [];
 let trendHot = [], trendCold = [], trendMid = [];
 let hotHot = [], coldCold = [];
+let freqFilter = "decision";
 
 // Utility: random pick
 function pick(arr, count) {
@@ -169,6 +186,7 @@ async function loadJson() {
     hot = []; cold = []; mid = [];
     trendHot = []; trendCold = []; trendMid = [];
     hotHot = []; coldCold = [];
+    document.getElementById("freqBoard").innerHTML = "";
 
     let html = '<h3>所有歷史結果</h3><div class="resultsTableScroll" tabindex="0" role="region" aria-label="所有歷史結果"><table><thead><tr><th>#</th><th>Date</th>' +
       Array.from({ length: 6 }, (_, index) => `<th>Number ${index + 1}</th>`).join("") +
@@ -236,13 +254,114 @@ function calcTrend() {
   updateIntersections();
 }
 
+function numberFreq(number) {
+  const countIn = group => group.reduce(
+    (count, result) => count + countNumber(result.numbers, number) + (result.special === number ? 1 : 0), 0
+  );
+  const c30 = countIn(results.slice(0, 30));
+  const c10 = countIn(results.slice(0, 10));
+  const c15 = countIn(results.slice(0, 15));
+  const prev = countIn(results.slice(15, 30));
+  return { c30, c10, c11: c15 - c10, c15, prev, change: c15 - prev };
+}
+
+function trendReady() {
+  return trendHot.length + trendCold.length + trendMid.length > 0;
+}
+
+function classifyNumber(number) {
+  const standard = hot.includes(number) ? "熱" : cold.includes(number) ? "冷" : (hot.length || cold.length ? "中" : "—");
+  const trend = !trendReady() ? "—" : trendHot.includes(number) ? "熱" : trendCold.includes(number) ? "冷" : "中";
+  let verdict = "—";
+  let rowClass = "";
+  if (standard === "熱" && trend === "熱") { verdict = "雙熱"; rowClass = "bothHot"; }
+  else if (standard === "冷" && trend === "冷") { verdict = "雙冷"; rowClass = "bothCold"; }
+  else if (standard === "熱" && trend === "冷") { verdict = "熱但轉弱"; rowClass = "warn"; }
+  else if (standard === "冷" && trend === "熱") { verdict = "冷但轉強"; rowClass = "rising"; }
+  else if (standard === "熱" && trend === "中") { verdict = "熱未確認"; rowClass = "warn"; }
+  return { standard, trend, verdict, rowClass };
+}
+
+function clickableNumbersWithFreq(numbers) {
+  return numbers.length
+    ? numbers.map(number => {
+        const freq = numberFreq(number);
+        const title = `30期 ${freq.c30}，近10期 ${freq.c10}，第11–15期 ${freq.c11}，近15期 ${freq.c15}，前15期 ${freq.prev}，變化 ${freq.change}`;
+        return `<button class="numberButton" title="${title}" onclick="showNumberStats(${number})">${number}<small>${freq.c30}/${freq.c10}+${freq.c11}/${freq.prev}</small></button>`;
+      }).join("")
+    : "（無）";
+}
+
+function comb(n, k) {
+  if (k < 0 || n < k) return 0;
+  let value = 1;
+  for (let i = 1; i <= k; i++) value = value * (n - k + i) / i;
+  return value;
+}
+
+function setFreqFilter(value) {
+  freqFilter = value;
+  renderFreqBoard();
+}
+
+function renderFreqBoard() {
+  const board = document.getElementById("freqBoard");
+  if (!results.length) {
+    board.innerHTML = "";
+    return;
+  }
+
+  const rows = Array.from({ length: 49 }, (_, index) => {
+    const number = index + 1;
+    return { number, ...numberFreq(number), ...classifyNumber(number) };
+  });
+  const fading = rows.filter(row => row.verdict === "熱但轉弱");
+  const unconfirmed = rows.filter(row => row.verdict === "熱未確認");
+  const rank = { "熱但轉弱": 0, "熱未確認": 1, "雙熱": 2, "冷但轉強": 3, "雙冷": 4 };
+  const visible = rows
+    .filter(row => !trendReady() || freqFilter === "all" || rank[row.verdict] !== undefined)
+    .sort((a, b) => (rank[a.verdict] ?? 9) - (rank[b.verdict] ?? 9) || a.change - b.change || b.c15 - a.c15 || a.number - b.number);
+
+  const deltaText = change => {
+    const css = change > 0 ? "up" : change < 0 ? "down" : "";
+    const sign = change > 0 ? "+" : "";
+    return `<span class="delta ${css}">${sign}${change}</span>`;
+  };
+  const recentCell = row => {
+    if (row.c15 > 0 && row.c10 === 0) return `<td class="stale">${row.c10}</td><td>${row.c11}</td>`;
+    if (row.c15 > 0 && row.c10 === row.c15) return `<td class="fresh">${row.c10}</td><td>${row.c11}</td>`;
+    return `<td>${row.c10}</td><td>${row.c11}</td>`;
+  };
+  const body = visible.map(row =>
+    `<tr class="${row.rowClass}"><td>${row.number}</td><td>${row.c30}</td>${recentCell(row)}<td>${row.c15}</td><td>${row.prev}</td><td>${deltaText(row.change)}</td><td>${row.standard}</td><td>${row.trend}</td><td>${row.verdict}</td></tr>`
+  ).join("");
+  const falseCold = fading.filter(row => row.c15 > 0 && row.c10 === row.c15).map(row => row.number);
+  const trueCold = fading.filter(row => row.c10 === 0).map(row => row.number);
+
+  board.innerHTML =
+    `<div class="warnBox"><strong>標準熱但趨勢轉弱（不會入雙熱）：</strong>${clickableNumbersWithFreq(fading.map(row => row.number))}` +
+    `<div class="freqNote">小字是 30期 / 近10期+第11–15期 / 前15期。近15期有次數，但最近10期是 0，先算真轉弱。如果 3 次全部在最近 10 期，15 期合計仍會當轉弱，但近期其實已回暖。</div>` +
+    (trueCold.length ? `<div class="freqNote">近15期的次數全部在第11–15期：${trueCold.join(", ")}</div>` : "") +
+    (falseCold.length ? `<div class="freqNote">近15期的次數全部在最近10期，轉弱標籤偏舊：${falseCold.join(", ")}</div>` : "") +
+    `</div>` +
+    (unconfirmed.length ? `<div class="freqNote">標準熱但趨勢中性：${clickableNumbersWithFreq(unconfirmed.map(row => row.number))}</div>` : "") +
+    `<div class="freqNote">雙熱 ${hotHot.length} 個，5 膽可組 ${comb(hotHot.length, 5)} 組。雙冷 ${coldCold.length} 個，5 膽可組 ${comb(coldCold.length, 5)} 組。</div>` +
+    `<div class="freqFilters">` +
+    `<button type="button" onclick="setFreqFilter('decision')">只看決策號碼</button>` +
+    `<button type="button" onclick="setFreqFilter('all')">全部 1–49</button>` +
+    `</div>` +
+    `<div class="resultsTableScroll"><table class="freqTable"><thead><tr><th>號碼</th><th>30期</th><th>近10</th><th>11–15</th><th>近15</th><th>前15</th><th>變化</th><th>標準</th><th>趨勢</th><th>判斷</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
 function updateIntersections() {
   hotHot = hot.filter(number => trendHot.includes(number));
   coldCold = cold.filter(number => trendCold.includes(number));
 
   document.getElementById("intersectionOutput").innerHTML =
-    `<div><strong>🔥🔥 標準熱 ∩ 趨勢熱：</strong>${clickableNumbers(hotHot)}</div>` +
-    `<div><strong>❄️❄️ 標準冷 ∩ 趨勢冷：</strong>${clickableNumbers(coldCold)}</div>`;
+    `<div><strong>🔥🔥 標準熱 ∩ 趨勢熱：</strong>${clickableNumbersWithFreq(hotHot)}</div>` +
+    `<div><strong>❄️❄️ 標準冷 ∩ 趨勢冷：</strong>${clickableNumbersWithFreq(coldCold)}</div>` +
+    `<div class="freqNote">按鈕下是 30期 / 近10期+第11–15期 / 前15期。近10期綠色代表近15期的次數全在最近10期；紅色 0 代表近15期的次數全部已過期。</div>`;
+  renderFreqBoard();
 }
 
 // Step 3：區間熱度
