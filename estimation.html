@@ -8,6 +8,9 @@
 <style>
 .numbtn { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0 2px; }
 .picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
+#heatTable tr.selected-row > td { box-shadow: inset 0 2px #ffc107, inset 0 -2px #ffc107; }
+#heatTable tr.selected-row > td:first-child { border-left: 2px solid #ffc107; }
+#heatTable tr.selected-row > td:last-child { border-right: 2px solid #ffc107; }
 td.cold, td.mid, td.warm, td.hot, td.outside { color: #212529; }
 td.cold { background-color: #9ec5f5 !important; }
 td.mid { background-color: #495057 !important; color: #f8f9fa; }
@@ -183,11 +186,18 @@ function verdictFor(row) {
 }
 function numCell(number) {
   const picked = number === selected ? " picked" : "";
-  return `<button class="numbtn${picked}" data-number="${number}" onclick="pick(${number})">${number}</button>`;
+  return `<button class="numbtn${picked}" data-number="${number}" aria-pressed="${number === selected}" onclick="pick(${number})">${number}</button>`;
 }
 function pick(number) {
   selected = selected === number ? null : number;
-  render();
+  document.querySelectorAll(".numbtn[data-number]").forEach(button => {
+    const active = Number(button.dataset.number) === selected;
+    button.classList.toggle("picked", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  document.querySelectorAll("#heatTable tr[data-row-number]").forEach(row => {
+    row.classList.toggle("selected-row", Number(row.dataset.rowNumber) === selected);
+  });
 }
 function showSection(id) {
   document.querySelectorAll("[data-panel]").forEach(panel => {
@@ -279,7 +289,7 @@ function renderHeat(rows) {
     const trendSign = row.trendScore > 0 ? "+" : "";
     const trendDirection = row.trendScore > 0 ? "up" : row.trendScore < 0 ? "down" : "";
     const cells = row.windows.map(count => `<td class="${heatClass(count)}">${count}</td>`).join("");
-    return `<tr><td>${numCell(row.number)}</td>${cells}<td class="${row.standard === "熱" ? "total-hot" : row.standard === "冷" ? "total-cold" : "total-normal"}">${row.c30}</td>` +
+    return `<tr data-row-number="${row.number}" class="${row.number === selected ? "selected-row" : ""}"><td>${numCell(row.number)}</td>${cells}<td class="${row.standard === "熱" ? "total-hot" : row.standard === "冷" ? "total-cold" : "total-normal"}">${row.c30}</td>` +
         `<td>${row.c15}</td><td>${row.prev}</td><td class="${direction}">${sign}${row.change}</td><td>${row.weight}</td><td class="${trendDirection}">${trendSign}${row.trendScore}</td><td>${row.gap}</td><td>${verdictFor(row)}</td></tr>`;
   }).join("");
       document.getElementById("heatTable").innerHTML = head + `<tbody>${body || '<tr><td colspan="15" class="text-secondary">沒有符合篩選的號碼</td></tr>'}</tbody>`;
