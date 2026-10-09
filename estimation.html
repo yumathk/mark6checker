@@ -44,7 +44,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
         <li class="nav-item"><button type="button" class="nav-link active" data-section="trend" onclick="showSection('trend')">每個號碼的 5 期走勢</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="windows" onclick="showSection('windows')">區間 × 5 期窗口</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="draws" onclick="showSection('draws')">每期區間分佈</button></li>
-        <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼配對</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li>
       </ul>
     </div>
   </div>
@@ -103,8 +103,15 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
     </div>
   </section>
   <section id="pairs" class="d-none" data-panel="pairs">
-    <h1 class="h5">號碼配對（最新30期，含特別號）</h1>
+    <h1 class="h5">號碼組合（最新30期，含特別號）</h1>
     <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+      <div>
+        <label for="pairSize" class="form-label small">組合大小</label>
+        <select id="pairSize" class="form-select form-select-sm" onchange="renderPairs()">
+          <option value="2">2個號碼</option>
+          <option value="3">3個號碼</option>
+        </select>
+      </div>
       <div>
         <label for="pairNumber" class="form-label small">包含號碼</label>
         <select id="pairNumber" class="form-select form-select-sm" onchange="renderPairs()">
@@ -114,6 +121,12 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
       <div>
         <label for="pairPartner" class="form-label small">另一號碼</label>
         <select id="pairPartner" class="form-select form-select-sm" onchange="renderPairs()">
+          <option value="0">全部號碼</option>
+        </select>
+      </div>
+      <div id="pairThirdFilter" class="d-none">
+        <label for="pairThird" class="form-label small">第三號碼</label>
+        <select id="pairThird" class="form-select form-select-sm" disabled onchange="renderPairs()">
           <option value="0">全部號碼</option>
         </select>
       </div>
@@ -132,6 +145,10 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
     <div id="pairStatus" class="small text-secondary mb-2" aria-live="polite"></div>
     <div class="table-responsive">
       <table id="pairTable" class="table table-sm table-bordered align-middle text-center mb-0"></table>
+    </div>
+    <div class="d-flex gap-2 mt-2">
+      <button id="pairPrev" type="button" class="btn btn-sm btn-outline-secondary" disabled onclick="renderPairs(pairPage - 1)">上一頁</button>
+      <button id="pairNext" type="button" class="btn btn-sm btn-outline-secondary" disabled onclick="renderPairs(pairPage + 1)">下一頁</button>
     </div>
   </section>
 </main>
@@ -160,10 +177,12 @@ let sortKey = "number";
 let view = "all";
 const temperatures = new Set(["冷", "正常", "熱"]);
 let selected = null;
+let pairPage = 1;
 
 const pairOptions = Array.from({ length: 49 }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`).join("");
 document.getElementById("pairNumber").insertAdjacentHTML("beforeend", pairOptions);
 document.getElementById("pairPartner").insertAdjacentHTML("beforeend", pairOptions);
+document.getElementById("pairThird").insertAdjacentHTML("beforeend", pairOptions);
 
 function ballsOf(result) {
   return [...result.numbers, result.special];
@@ -296,47 +315,68 @@ function render() {
   renderPairs();
 }
 
-function pairRows() {
-  const counts = Array.from({ length: 50 }, () => Array(50).fill(0));
-  const recentCounts = Array.from({ length: 50 }, () => Array(50).fill(0));
-  draws.slice(0, 30).forEach((result, index) => {
-    const balls = [...new Set(ballsOf(result))].sort((first, second) => first - second);
-    balls.forEach((first, position) => {
-      balls.slice(position + 1).forEach(second => {
-        counts[first][second]++;
-        if (index < 15) recentCounts[first][second]++;
-      });
-    });
-  });
-  const rows = [];
-  for (let first = 1; first <= 49; first++) {
-    for (let second = first + 1; second <= 49; second++) {
-      rows.push({ first, second, count: counts[first][second], recent: recentCounts[first][second], previous: counts[first][second] - recentCounts[first][second] });
+function combinations(numbers, size) {
+  const groups = [];
+  const collect = (start, group) => {
+    if (group.length === size) {
+      groups.push(group);
+      return;
     }
-  }
-  return rows;
+    for (let index = start; index <= numbers.length - (size - group.length); index++) {
+      collect(index + 1, [...group, numbers[index]]);
+    }
+  };
+  collect(0, []);
+  return groups;
 }
 
-function renderPairs() {
+function groupRows(size) {
+  const counts = new Map();
+  draws.slice(0, 30).forEach((result, index) => {
+    const balls = [...new Set(ballsOf(result))].sort((first, second) => first - second);
+    combinations(balls, size).forEach(numbers => {
+      const key = numbers.join(",");
+      const row = counts.get(key) || { count: 0, recent: 0 };
+      row.count++;
+      if (index < 15) row.recent++;
+      counts.set(key, row);
+    });
+  });
+  return combinations(Array.from({ length: 49 }, (_, index) => index + 1), size).map(numbers => {
+    const row = counts.get(numbers.join(",")) || { count: 0, recent: 0 };
+    return { numbers, ...row, previous: row.count - row.recent };
+  });
+}
+
+function renderPairs(page = 1) {
+  const size = Number(document.getElementById("pairSize").value);
+  document.getElementById("pairThirdFilter").classList.toggle("d-none", size !== 3);
+  document.getElementById("pairThird").disabled = size !== 3;
   if (!draws.length) return;
   const number = Number(document.getElementById("pairNumber").value);
   const partner = Number(document.getElementById("pairPartner").value);
+  const third = size === 3 ? Number(document.getElementById("pairThird").value) : 0;
   const minimum = Number(document.getElementById("pairMinimum").value);
-  const visible = pairRows()
-    .filter(row => (!number || row.first === number || row.second === number) &&
-      (!partner || row.first === partner || row.second === partner) &&
-      (!number || !partner || number !== partner) && row.count >= minimum)
-    .sort((first, second) => second.count - first.count || second.recent - first.recent || first.first - second.first || first.second - second.second);
-  document.getElementById("pairStatus").textContent = `最新 ${Math.min(draws.length, 30)} 期：${visible.length} 組配對`;
-  const head = "<thead><tr><th>號碼</th><th>另一號碼</th><th>30期同出</th><th>近15</th><th>前15</th></tr></thead>";
+  const filters = [number, partner, third].filter(value => value > 0);
+  const uniqueFilters = new Set(filters);
+  const visible = groupRows(size)
+    .filter(row => uniqueFilters.size === filters.length && filters.every(value => row.numbers.includes(value)) && row.count >= minimum)
+    .sort((first, second) => second.count - first.count || second.recent - first.recent ||
+      first.numbers[0] - second.numbers[0] || first.numbers[1] - second.numbers[1] || (first.numbers[2] || 0) - (second.numbers[2] || 0));
+  const pages = Math.max(1, Math.ceil(visible.length / 100));
+  pairPage = Math.min(pages, Math.max(1, page));
+  document.getElementById("pairPrev").disabled = pairPage === 1;
+  document.getElementById("pairNext").disabled = pairPage === pages;
+  document.getElementById("pairStatus").textContent = `最新 ${Math.min(draws.length, 30)} 期：${visible.length} 組${size}號碼組合，第 ${pairPage} / ${pages} 頁`;
+  const head = `<thead><tr><th>號碼</th><th>另一號碼</th>${size === 3 ? "<th>第三號碼</th>" : ""}<th>30期同出</th><th>近15</th><th>前15</th></tr></thead>`;
   const totals = Array.from({ length: 50 }, (_, number) => countIn(draws.slice(0, 30), number));
   const pairNumberCell = number => {
     const standard = standardOf(totals[number]);
     const css = standard === "熱" ? "total-hot" : standard === "冷" ? "total-cold" : "total-normal";
     return `<td class="${css}" title="30期 ${totals[number]} 次：${standard}">${numCell(number)}</td>`;
   };
-  const body = visible.map(row => `<tr>${pairNumberCell(row.first)}${pairNumberCell(row.second)}<td>${row.count}</td><td>${row.recent}</td><td>${row.previous}</td></tr>`).join("");
-  document.getElementById("pairTable").innerHTML = head + `<tbody>${body || '<tr><td colspan="5" class="text-secondary">沒有符合篩選的配對</td></tr>'}</tbody>`;
+  const body = visible.slice((pairPage - 1) * 100, pairPage * 100).map(row => `<tr>${row.numbers.map(pairNumberCell).join("")}<td>${row.count}</td><td>${row.recent}</td><td>${row.previous}</td></tr>`).join("");
+  document.getElementById("pairTable").innerHTML = head + `<tbody>${body || `<tr><td colspan="${size + 3}" class="text-secondary">沒有符合篩選的組合</td></tr>`}</tbody>`;
 }
 
 function renderAttention(rows) {
