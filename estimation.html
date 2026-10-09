@@ -257,7 +257,7 @@ function renderAttention(rows) {
 
 function renderHeat(rows) {
   const visible = rows
-    .filter(row => view === "all" || row.tags.length)
+    .filter(row => view === "all" || row.trendScore >= 0)
     .filter(row => temperatures.has(row.standard))
     .sort((a, b) => {
       if (sortKey === "number") return a.number - b.number;
