@@ -59,11 +59,12 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 
   <section id="trend" data-panel="trend">
     <h1 class="h5">每個號碼的 5 期走勢</h1>
-    <p class="small text-secondary">欄位是不重疊的 1–5、6–10 … 26–30。加權 = 6×(1–5)+5×(6–10)+4×(11–15)+3×(16–20)+2×(21–25)+1×(26–30)。特別號計入。</p>
+    <p class="small text-secondary">欄位是不重疊的 1–5、6–10 … 26–30。活躍度權重：6、5、4、3、2、1；趨勢分權重：+3、+2、+1、−1、−2、−3（由近至遠）。趨勢分正值偏近期、負值偏早期，並非下期機率。特別號計入。</p>
     <div id="attention" class="mb-3"></div>
     <div class="btn-group btn-group-sm flex-wrap mb-2" role="group">
       <button type="button" class="btn btn-outline-secondary active" data-sort="number" onclick="setSort('number')">號碼</button>
-      <button type="button" class="btn btn-outline-secondary" data-sort="weight" onclick="setSort('weight')">加權</button>
+      <button type="button" class="btn btn-outline-secondary" data-sort="weight" onclick="setSort('weight')">活躍度</button>
+      <button type="button" class="btn btn-outline-secondary" data-sort="trendScore" onclick="setSort('trendScore')">趨勢分</button>
       <button type="button" class="btn btn-outline-secondary" data-sort="recent" onclick="setSort('recent')">近5期</button>
       <button type="button" class="btn btn-outline-secondary" data-sort="c30" onclick="setSort('c30')">30期</button>
       <button type="button" class="btn btn-outline-secondary active" data-view="all" onclick="setView('all')">全部</button>
@@ -149,8 +150,10 @@ function numberRow(number) {
   const c15 = windows[0] + windows[1] + windows[2];
   const prev = windows[3] + windows[4] + windows[5];
   const weight = windows.reduce((sum, count, index) => sum + count * WINDOWS[index].weight, 0);
+  const trendWeights = [3, 2, 1, -1, -2, -3];
+  const trendScore = windows.reduce((sum, count, index) => sum + count * trendWeights[index], 0);
   const gap = draws.findIndex(result => ballsOf(result).includes(number));
-  return { number, windows, c30, c15, prev, change: c15 - prev, weight, gap: gap === -1 ? draws.length : gap };
+  return { number, windows, c30, c15, prev, change: c15 - prev, weight, trendScore, gap: gap === -1 ? draws.length : gap };
 }
 function standardOf(count) {
   if (count <= 3) return "冷";
@@ -260,18 +263,21 @@ function renderHeat(rows) {
       if (sortKey === "number") return a.number - b.number;
       if (sortKey === "recent") return b.windows[0] - a.windows[0] || b.weight - a.weight || a.number - b.number;
       if (sortKey === "c30") return b.c30 - a.c30 || b.weight - a.weight || a.number - b.number;
+      if (sortKey === "trendScore") return b.trendScore - a.trendScore || b.windows[0] - a.windows[0] || a.number - b.number;
       return b.weight - a.weight || b.windows[0] - a.windows[0] || a.number - b.number;
     });
   const head = `<thead><tr><th>號碼</th>${WINDOWS.map(window => `<th>${window.label}</th>`).join("")}` +
-    `${th("30期", "c30")}<th>近15</th><th>前15</th><th>變化</th>${th("加權", "weight")}<th>距今</th><th>判斷</th></tr></thead>`;
+    `${th("30期", "c30")}<th>近15</th><th>前15</th><th>變化</th>${th("活躍度", "weight")}${th("趨勢分", "trendScore")}<th>距今</th><th>判斷</th></tr></thead>`;
   const body = visible.map(row => {
     const sign = row.change > 0 ? "+" : "";
     const direction = row.change > 0 ? "up" : row.change < 0 ? "down" : "";
+    const trendSign = row.trendScore > 0 ? "+" : "";
+    const trendDirection = row.trendScore > 0 ? "up" : row.trendScore < 0 ? "down" : "";
     const cells = row.windows.map(count => `<td class="${heatClass(count)}">${count}</td>`).join("");
     return `<tr><td>${numCell(row.number)}</td>${cells}<td class="${row.standard === "熱" ? "total-hot" : row.standard === "冷" ? "total-cold" : "total-normal"}">${row.c30}</td>` +
-        `<td>${row.c15}</td><td>${row.prev}</td><td class="${direction}">${sign}${row.change}</td><td>${row.weight}</td><td>${row.gap}</td><td>${verdictFor(row)}</td></tr>`;
+        `<td>${row.c15}</td><td>${row.prev}</td><td class="${direction}">${sign}${row.change}</td><td>${row.weight}</td><td class="${trendDirection}">${trendSign}${row.trendScore}</td><td>${row.gap}</td><td>${verdictFor(row)}</td></tr>`;
   }).join("");
-      document.getElementById("heatTable").innerHTML = head + `<tbody>${body || '<tr><td colspan="14" class="text-secondary">沒有符合篩選的號碼</td></tr>'}</tbody>`;
+      document.getElementById("heatTable").innerHTML = head + `<tbody>${body || '<tr><td colspan="15" class="text-secondary">沒有符合篩選的號碼</td></tr>'}</tbody>`;
 }
 
 function bandCounts(result) {
