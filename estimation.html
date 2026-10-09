@@ -24,6 +24,8 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 @media (max-width: 576px) {
   .table { font-size: 0.75rem; }
   .table th, .table td { padding: 0.2rem; white-space: nowrap; }
+  .trend-table-scroll { max-height: 70vh; overflow: auto; }
+  #heatTable thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg); }
 }
 </style>
 </head>
@@ -81,7 +83,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
         <label class="btn btn-outline-danger" for="filterHot">熱</label>
       </div>
     </div>
-    <div class="table-responsive">
+    <div class="table-responsive trend-table-scroll">
       <table id="heatTable" class="table table-sm table-bordered align-middle text-center mb-0"></table>
     </div>
   </section>
@@ -163,7 +165,9 @@ function standardOf(count) {
 function tagsFor(row) {
   const tags = [];
   const hotAbsent10 = row.standard === "熱" && row.windows[0] + row.windows[1] === 0;
-  if (row.standard !== "冷" && row.windows[0] === 0 && !hotAbsent10) tags.push("轉冷（近5期未出）");
+  if (row.standard !== "冷" && row.windows[0] === 0 && !hotAbsent10) {
+    tags.push(row.windows[1] === 0 ? "轉冷（近10期未出）" : "轉冷（近5期未出）");
+  }
   if (row.windows[0] >= 4) tags.push("近5熱");
   if (hotAbsent10) tags.push("熱但近10未出");
   if (row.standard === "正常" && row.c15 > row.prev && row.windows[0] > 0 && row.c15 >= 3) tags.push("潛力上升");
@@ -172,6 +176,7 @@ function tagsFor(row) {
 }
 function verdictFor(row) {
   if (row.tags.includes("熱但近10未出")) return "熱但近10未出";
+  if (row.tags.includes("轉冷（近10期未出）")) return `${row.standard}但轉冷（近10期未出）`;
   if (row.tags.includes("轉冷（近5期未出）")) return `${row.standard}但轉冷（近5期未出）`;
   if (row.tags.includes("冷但回升")) return "冷但回升";
   return [row.standard, ...row.tags].join("、");
