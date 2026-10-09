@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mark Six Estimation</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+<style>
+.numbtn { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0 2px; }
+.picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
+td.cold, td.mid, td.warm, td.hot, td.outside { color: #212529; }
+td.cold { background-color: #9ec5f5 !important; }
+td.mid { background-color: #495057 !important; color: #f8f9fa; }
+td.warm { background-color: #ff9800 !important; color: #212529 !important; }
+td.hot { background-color: #ff8a80 !important; font-weight: 700; }
+.total-cold { background-color: #9ec5f5 !important; color: #212529 !important; }
+.total-normal { background-color: #ffe082 !important; color: #212529 !important; }
+.total-hot { background-color: #ff8a80 !important; color: #212529 !important; }
+.total-legend { display: inline-block; padding: 2px 8px; border-radius: 4px; }
+tr.dim td { color: #adb5bd; }
+td.outside { background-color: #343a40 !important; color: #adb5bd; }
+.up { color: #75b798 !important; font-weight: 700; }
+.down { color: #ea868f !important; font-weight: 700; }
+@media (max-width: 576px) {
+  .table { font-size: 0.75rem; }
+  .table th, .table td { padding: 0.2rem; white-space: nowrap; }
+}
+</style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+  <div class="container-fluid">
+    <span class="navbar-brand">估算</span>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu" aria-controls="navMenu" aria-expanded="false" aria-label="選單">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><button type="button" class="nav-link active" data-section="trend" onclick="showSection('trend')">每個號碼的 5 期走勢</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="windows" onclick="showSection('windows')">區間 × 5 期窗口</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="draws" onclick="showSection('draws')">每期區間分佈</button></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container-fluid py-3">
+  <div class="input-group mb-2">
+    <input id="jsonUrl" class="form-control" type="text" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json">
+    <button class="btn btn-primary" type="button" onclick="loadJson()">讀取並估算</button>
+  </div>
+  <div id="status" class="small text-secondary mb-2"></div>
+  <p class="small text-secondary">30 期合計：<span class="total-legend total-cold">0–3 冷</span> <span class="total-legend total-normal">4–5 正常</span> <span class="total-legend total-hot">6+ 熱</span>。每個號碼的五期格：<span class="total-legend total-cold">0–1 冷</span> <span class="total-legend total-normal">2–3 正常</span> <span class="total-legend total-hot">4–5 熱</span>。</p>
+
+  <section id="windows" class="d-none" data-panel="windows">
+    <h1 class="h5">區間 × 5 期窗口</h1>
+    <div id="bandSummary"></div>
+  </section>
+
+  <section id="trend" data-panel="trend">
+    <h1 class="h5">每個號碼的 5 期走勢</h1>
+    <p class="small text-secondary">欄位是不重疊的 1–5、6–10 … 26–30。加權 = 6×(1–5)+5×(6–10)+4×(11–15)+3×(16–20)+2×(21–25)+1×(26–30)。特別號計入。</p>
+    <div id="attention" class="mb-3"></div>
+    <div class="btn-group btn-group-sm flex-wrap mb-2" role="group">
+      <button type="button" class="btn btn-outline-secondary active" data-sort="number" onclick="setSort('number')">號碼</button>
+      <button type="button" class="btn btn-outline-secondary" data-sort="weight" onclick="setSort('weight')">加權</button>
+      <button type="button" class="btn btn-outline-secondary" data-sort="recent" onclick="setSort('recent')">近5期</button>
+      <button type="button" class="btn btn-outline-secondary" data-sort="c30" onclick="setSort('c30')">30期</button>
+      <button type="button" class="btn btn-outline-secondary active" data-view="all" onclick="setView('all')">全部</button>
+      <button type="button" class="btn btn-outline-secondary" data-view="focus" onclick="setView('focus')">只看要留意</button>
+    </div>
+    <div class="d-inline-flex align-items-center gap-2 mb-2 ms-sm-2">
+      <span class="small text-nowrap" id="temperatureLabel">30期冷熱</span>
+      <div class="btn-group btn-group-sm" role="group" aria-labelledby="temperatureLabel">
+        <input type="checkbox" class="btn-check" id="filterCold" value="冷" checked onchange="setTemperature(this.value, this.checked)">
+        <label class="btn btn-outline-primary" for="filterCold">冷</label>
+        <input type="checkbox" class="btn-check" id="filterNormal" value="正常" checked onchange="setTemperature(this.value, this.checked)">
+        <label class="btn btn-outline-warning" for="filterNormal">正常</label>
+        <input type="checkbox" class="btn-check" id="filterHot" value="熱" checked onchange="setTemperature(this.value, this.checked)">
+        <label class="btn btn-outline-danger" for="filterHot">熱</label>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table id="heatTable" class="table table-sm table-bordered align-middle text-center mb-0"></table>
+    </div>
+  </section>
+
+  <section id="draws" class="d-none" data-panel="draws">
+    <h1 class="h5">每期區間分佈（6 個正選 + 特別號 = 7）</h1>
+    <div class="form-check mb-2">
+      <input id="only30" class="form-check-input" type="checkbox" checked onchange="render()">
+      <label class="form-check-label" for="only30">只顯示估算用的最新 30 期</label>
+    </div>
+    <div class="table-responsive">
+      <table id="bandTable" class="table table-sm table-bordered align-middle text-center mb-0"></table>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+<script>
+const WINDOWS = [
+  { label: "1–5", start: 0, end: 5, weight: 6 },
+  { label: "6–10", start: 5, end: 10, weight: 5 },
+  { label: "11–15", start: 10, end: 15, weight: 4 },
+  { label: "16–20", start: 15, end: 20, weight: 3 },
+  { label: "21–25", start: 20, end: 25, weight: 2 },
+  { label: "26–30", start: 25, end: 30, weight: 1 }
+];
+const BANDS = [
+  { label: "1–10", min: 1, max: 10 },
+  { label: "11–20", min: 11, max: 20 },
+  { label: "21–30", min: 21, max: 30 },
+  { label: "31–40", min: 31, max: 40 },
+  { label: "41–49", min: 41, max: 49 }
+];
+
+let full = [];
+let draws = [];
+let sortKey = "number";
+let view = "all";
+const temperatures = new Set(["冷", "正常", "熱"]);
+let selected = null;
+
+function ballsOf(result) {
+  return [...result.numbers, result.special];
+}
+function bandSize(band) { return band.max - band.min + 1; }
+function expectedBand(drawsInWindow, band) {
+  return drawsInWindow * 7 * bandSize(band) / 49;
+}
+function heatClass(count) {
+  if (count <= 1) return "total-cold";
+  if (count <= 3) return "total-normal";
+  return "total-hot";
+}
+function bandClass(count) {
+  if (count <= 3) return "total-cold";
+  if (count <= 6) return "total-normal";
+  if (count <= 9) return "warm";
+  return "total-hot";
+}
+function countIn(group, number) {
+  return group.reduce((count, result) => count + (ballsOf(result).includes(number) ? 1 : 0), 0);
+}
+function numberRow(number) {
+  const windows = WINDOWS.map(window => countIn(draws.slice(window.start, window.end), number));
+  const c30 = windows.reduce((sum, count) => sum + count, 0);
+  const c15 = windows[0] + windows[1] + windows[2];
+  const prev = windows[3] + windows[4] + windows[5];
+  const weight = windows.reduce((sum, count, index) => sum + count * WINDOWS[index].weight, 0);
+  const gap = draws.findIndex(result => ballsOf(result).includes(number));
+  return { number, windows, c30, c15, prev, change: c15 - prev, weight, gap: gap === -1 ? draws.length : gap };
+}
+function standardOf(count) {
+  if (count <= 3) return "冷";
+  if (count >= 6) return "熱";
+  return "正常";
+}
+function tagsFor(row) {
+  const tags = [];
+  const hotAbsent10 = row.standard === "熱" && row.windows[0] + row.windows[1] === 0;
+  if (row.standard !== "冷" && row.windows[0] === 0 && !hotAbsent10) tags.push("轉冷（近5期未出）");
+  if (row.windows[0] >= 4) tags.push("近5熱");
+  if (hotAbsent10) tags.push("熱但近10未出");
+  if (row.standard === "正常" && row.c15 > row.prev && row.windows[0] > 0 && row.c15 >= 3) tags.push("潛力上升");
+  if (row.standard === "冷" && row.c15 > row.prev && row.windows[0] > 0) tags.push("冷但回升");
+  return tags;
+}
+function verdictFor(row) {
+  if (row.tags.includes("熱但近10未出")) return "熱但近10未出";
+  if (row.tags.includes("轉冷（近5期未出）")) return `${row.standard}但轉冷（近5期未出）`;
+  if (row.tags.includes("冷但回升")) return "冷但回升";
+  return [row.standard, ...row.tags].join("、");
+}
+function numCell(number) {
+  const picked = number === selected ? " picked" : "";
+  return `<button class="numbtn${picked}" data-number="${number}" onclick="pick(${number})">${number}</button>`;
+}
+function pick(number) {
+  selected = selected === number ? null : number;
+  render();
+}
+function showSection(id) {
+  document.querySelectorAll("[data-panel]").forEach(panel => {
+    panel.classList.toggle("d-none", panel.dataset.panel !== id);
+  });
+  document.querySelectorAll("#navMenu .nav-link").forEach(link => {
+    link.classList.toggle("active", link.dataset.section === id);
+  });
+  const menu = document.getElementById("navMenu");
+  if (menu.classList.contains("show")) bootstrap.Collapse.getOrCreateInstance(menu).hide();
+  window.scrollTo(0, 0);
+}
+function setSort(value) {
+  sortKey = value;
+  document.querySelectorAll("[data-sort]").forEach(button => button.classList.toggle("active", button.dataset.sort === value));
+  render();
+}
+function setView(value) {
+  view = value;
+  document.querySelectorAll("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === value));
+  render();
+}
+function setTemperature(value, checked) {
+  if (checked) temperatures.add(value);
+  else temperatures.delete(value);
+  render();
+}
+function th(label, key) {
+  return `<th onclick="setSort('${key}')">${label}${sortKey === key ? " ▼" : ""}</th>`;
+}
+
+async function loadJson() {
+  const status = document.getElementById("status");
+  status.textContent = "讀取中…";
+  try {
+    const response = await fetch(document.getElementById("jsonUrl").value);
+    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error("JSON 不是陣列");
+    full = data;
+    draws = full.slice(0, 30);
+    status.textContent = `已讀 ${full.length} 期，估算用最新 ${draws.length} 期` +
+      (draws[0] ? `（${draws[0].date}）` : "");
+    render();
+  } catch (error) {
+    status.innerHTML = "無法讀取 JSON：" + error + "。file:// 直接開頁時，瀏覽器可能擋住讀取。";
+  }
+}
+
+function render() {
+  if (!draws.length) return;
+  const rows = Array.from({ length: 49 }, (_, index) => numberRow(index + 1))
+    .map(row => ({ ...row, standard: standardOf(row.c30) }))
+    .map(row => ({ ...row, tags: tagsFor(row) }));
+
+  renderAttention(rows);
+  renderHeat(rows);
+  renderBands();
+}
+
+function renderAttention(rows) {
+  const list = title => {
+    const found = rows.filter(row => row.tags.includes(title));
+    return found.length ? found.map(row => numCell(row.number)).join(" ") : "（無）";
+  };
+  document.getElementById("attention").innerHTML =
+    `<div class="alert alert-success py-2"><strong>近5熱（最新 5 期 ≥ 4）：</strong> ${list("近5熱")}</div>` +
+    `<div class="alert alert-success py-2"><strong>潛力上升（30 期 4–5 次，近15期多過前15期，近5期仍有出現）：</strong> ${list("潛力上升")}</div>` +
+    `<div class="alert alert-warning py-2"><strong>熱但近10未出：</strong> ${list("熱但近10未出")}</div>` +
+    `<div class="alert alert-primary py-2"><strong>冷但回升：</strong> ${list("冷但回升")}</div>`;
+}
+
+function renderHeat(rows) {
+  const visible = rows
+    .filter(row => view === "all" || row.tags.length)
+    .filter(row => temperatures.has(row.standard))
+    .sort((a, b) => {
+      if (sortKey === "number") return a.number - b.number;
+      if (sortKey === "recent") return b.windows[0] - a.windows[0] || b.weight - a.weight || a.number - b.number;
+      if (sortKey === "c30") return b.c30 - a.c30 || b.weight - a.weight || a.number - b.number;
+      return b.weight - a.weight || b.windows[0] - a.windows[0] || a.number - b.number;
+    });
+  const head = `<thead><tr><th>號碼</th>${WINDOWS.map(window => `<th>${window.label}</th>`).join("")}` +
+    `${th("30期", "c30")}<th>近15</th><th>前15</th><th>變化</th>${th("加權", "weight")}<th>距今</th><th>判斷</th></tr></thead>`;
+  const body = visible.map(row => {
+    const sign = row.change > 0 ? "+" : "";
+    const direction = row.change > 0 ? "up" : row.change < 0 ? "down" : "";
+    const cells = row.windows.map(count => `<td class="${heatClass(count)}">${count}</td>`).join("");
+    return `<tr><td>${numCell(row.number)}</td>${cells}<td class="${row.standard === "熱" ? "total-hot" : row.standard === "冷" ? "total-cold" : "total-normal"}">${row.c30}</td>` +
+        `<td>${row.c15}</td><td>${row.prev}</td><td class="${direction}">${sign}${row.change}</td><td>${row.weight}</td><td>${row.gap}</td><td>${verdictFor(row)}</td></tr>`;
+  }).join("");
+      document.getElementById("heatTable").innerHTML = head + `<tbody>${body || '<tr><td colspan="14" class="text-secondary">沒有符合篩選的號碼</td></tr>'}</tbody>`;
+}
+
+function bandCounts(result) {
+  const balls = ballsOf(result);
+  return BANDS.map(band => balls.filter(number => number >= band.min && number <= band.max).length);
+}
+
+function renderBands() {
+  const only30 = document.getElementById("only30").checked;
+  const shown = only30 ? draws : full;
+  const windowHead = WINDOWS.map(window => `<th>${window.label}</th>`).join("");
+  let summary = `<div class="table-responsive"><table class="table table-sm table-bordered align-middle text-center mb-3"><thead><tr><th>區間</th><th>5期期望</th>${windowHead}<th>30期合計</th><th>30期期望</th><th>近5偏離</th></tr></thead><tbody>`;
+  BANDS.forEach((band, bandIndex) => {
+    const perWindow = WINDOWS.map(window => draws.slice(window.start, window.end)
+      .reduce((sum, result) => sum + bandCounts(result)[bandIndex], 0));
+    const total = perWindow.reduce((sum, count) => sum + count, 0);
+    const cells = perWindow.map(count => `<td class="${bandClass(count)}">${count}</td>`).join("");
+    const recentGap = (perWindow[0] - expectedBand(5, band)).toFixed(1);
+    summary += `<tr><td>${band.label}</td><td>${expectedBand(5, band).toFixed(1)}</td>${cells}` +
+      `<td>${total}</td><td>${expectedBand(draws.length, band).toFixed(1)}</td><td class="${recentGap > 0 ? "up" : recentGap < 0 ? "down" : ""}">${recentGap}</td></tr>`;
+  });
+  summary += "</tbody></table></div>";
+  document.getElementById("bandSummary").innerHTML =
+    `<p class="small text-secondary">1–40 每格期望 ${expectedBand(5, BANDS[0]).toFixed(1)}；41–49 只有 9 個號碼，期望 ${expectedBand(5, BANDS[4]).toFixed(1)}。五期區間次數：0–3 藍、4–6 黃、7–9 橙、10+ 紅。</p>` + summary;
+
+  const head = `<thead><tr><th>#</th><th>Date</th><th colspan="6">Numbers</th><th>Special</th>${BANDS.map(band => `<th>${band.label}</th>`).join("")}</tr></thead>`;
+  const body = shown.map((result, index) => {
+    const counts = bandCounts(result);
+    const outside = index >= 30 ? " dim" : "";
+    const nums = result.numbers.map(number => `<td class="${outside.trim()}">${numCell(number)}</td>`).join("");
+    const bands = counts.map(count => `<td class="${heatClass(count)}">${count}</td>`).join("");
+    return `<tr class="${outside.trim()}"><td>${index}</td><td>${result.date}</td>${nums}<td>${numCell(result.special)}</td>${bands}</tr>`;
+  }).join("");
+  document.getElementById("bandTable").innerHTML = head + `<tbody>${body}</tbody>`;
+}
+</script>
+</body>
+</html>
