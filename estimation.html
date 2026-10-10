@@ -8,9 +8,16 @@
 <style>
 .numbtn { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0 2px; }
 .picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
-#heatTable tr.selected-row > td { box-shadow: inset 0 2px #ffc107, inset 0 -2px #ffc107; }
-#heatTable tr.selected-row > td:first-child { border-left: 2px solid #ffc107; }
-#heatTable tr.selected-row > td:last-child { border-right: 2px solid #ffc107; }
+#heatTable tr.selected-row > td, #historyTable tr.selected-row > td { box-shadow: inset 0 2px #ffc107, inset 0 -2px #ffc107; }
+#heatTable tr.selected-row > td:first-child, #historyTable tr.selected-row > td:first-child { border-left: 2px solid #ffc107; }
+#heatTable tr.selected-row > td:last-child, #historyTable tr.selected-row > td:last-child { border-right: 2px solid #ffc107; }
+.numbtn.filter-hit { box-shadow: inset 0 0 0 2px #0d6efd; }
+.numbtn.filter-hit:not(.picked) { background: #cfe2ff; color: #212529; }
+#historyTable .numbtn { display: block; width: 100%; min-height: 1.75rem; border-radius: 4px; }
+#historyTable tr.selected-row .numbtn:not(.picked):not(.filter-hit) { opacity: 0.45; }
+.history-toolbar { position: sticky; top: 56px; z-index: 3; background: var(--bs-body-bg); }
+#historyTable thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg); }
+.number-popover { max-width: 20rem; }
 td.cold, td.mid, td.warm, td.hot, td.outside { color: #212529; }
 td.cold { background-color: #9ec5f5 !important; }
 td.mid { background-color: #495057 !important; color: #f8f9fa; }
@@ -44,6 +51,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
         <li class="nav-item"><button type="button" class="nav-link active" data-section="trend" onclick="showSection('trend')">每個號碼的 5 期走勢</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="windows" onclick="showSection('windows')">區間 × 5 期窗口</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="draws" onclick="showSection('draws')">每期區間分佈</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="history" onclick="showSection('history')">所有歷史結果</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li>
       </ul>
     </div>
@@ -102,6 +110,26 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
       <table id="bandTable" class="table table-sm table-bordered align-middle text-center mb-0"></table>
     </div>
   </section>
+
+  <section id="history" class="d-none" data-panel="history">
+    <h1 class="h5">所有歷史結果</h1>
+    <div class="history-toolbar pb-2">
+      <div class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label for="historyFilter" class="form-label small mb-1">搜尋號碼（1–49）</label>
+          <input id="historyFilter" class="form-control form-control-sm" type="number" min="1" max="49" inputmode="numeric" placeholder="例如 40" oninput="renderHistory()">
+        </div>
+        <div class="col-auto">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearHistoryFilter()">清除</button>
+        </div>
+      </div>
+      <div id="historyStatus" class="small text-secondary mt-2">點擊號碼可在所有期數中高亮，並查看統計。搜尋後只顯示包含該號碼的日期。</div>
+    </div>
+    <div class="table-responsive trend-table-scroll">
+      <table id="historyTable" class="table table-sm table-striped table-bordered align-middle text-center mb-0"></table>
+    </div>
+  </section>
+
   <section id="pairs" class="d-none" data-panel="pairs">
     <h1 class="h5">號碼組合（最新30期，含特別號）</h1>
     <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
@@ -256,6 +284,10 @@ function pick(number) {
   document.querySelectorAll("#heatTable tr[data-row-number]").forEach(row => {
     row.classList.toggle("selected-row", Number(row.dataset.rowNumber) === selected);
   });
+  document.querySelectorAll("#historyTable tbody tr[data-numbers]").forEach(row => {
+    const numbers = row.dataset.numbers.split(",").map(Number);
+    row.classList.toggle("selected-row", selected !== null && numbers.includes(selected));
+  });
 }
 function showSection(id) {
   closeNumberPopover();
@@ -315,6 +347,7 @@ function render() {
   renderAttention(rows);
   renderHeat(rows);
   renderBands();
+  renderHistory();
   renderPairs();
 }
 
@@ -366,8 +399,8 @@ function showNumberPopover(button, number) {
   row.tags = tagsFor(row);
   const signed = value => value > 0 ? `+${value}` : String(value);
   const direction = value => value > 0 ? "up" : value < 0 ? "down" : "";
-  const content =
-    `<div>30期：<strong>${row.c30} 次（${row.standard}）</strong></div>` +
+  const content = historySummary(number) +
+    `<div class="mt-1">30期：<strong>${row.c30} 次（${row.standard}）</strong></div>` +
     `<div>趨勢分：<strong class="${direction(row.trendScore)}">${signed(row.trendScore)}</strong></div>` +
     `<div>近5 / 近10：<strong>${row.windows[0]} / ${row.windows[0] + row.windows[1]}</strong></div>` +
     `<div>近15 / 前15：<strong>${row.c15} / ${row.prev}</strong></div>` +
@@ -380,7 +413,8 @@ function showNumberPopover(button, number) {
     html: true,
     trigger: "manual",
     placement: "auto",
-    container: "body"
+    container: "body",
+    customClass: "number-popover"
   });
   numberPopover = { button, instance };
   instance.show();
@@ -392,6 +426,95 @@ document.addEventListener("click", event => {
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") closeNumberPopover();
 });
+
+function historyFilterNumber() {
+  const raw = document.getElementById("historyFilter").value.trim();
+  if (!raw) return { state: "all" };
+  const number = Number(raw);
+  if (!Number.isInteger(number) || number < 1 || number > 49) return { state: "invalid" };
+  return { state: "number", number };
+}
+
+function clearHistoryFilter() {
+  document.getElementById("historyFilter").value = "";
+  renderHistory();
+}
+
+function historySummary(number) {
+  if (!full.length) return "";
+  let main = 0;
+  let special = 0;
+  let gap = null;
+  let lastDate = null;
+  let previous = null;
+  const gaps = [];
+  full.forEach((result, index) => {
+    const inMain = result.numbers.includes(number);
+    const inSpecial = result.special === number;
+    if (!inMain && !inSpecial) return;
+    if (inMain) main++;
+    if (inSpecial) special++;
+    if (gap === null) {
+      gap = index;
+      lastDate = result.date;
+    }
+    if (previous !== null) gaps.push(index - previous);
+    previous = index;
+  });
+  const total = main + special;
+  const rate = (total / full.length * 100).toFixed(1);
+  const avg = gaps.length ? (gaps.reduce((sum, value) => sum + value, 0) / gaps.length).toFixed(1) : "—";
+  const last = lastDate ? `${lastDate}（距今 ${gap} 期）` : "未出現";
+  return `<div>全部 ${full.length} 期：<strong>${total} 次（${rate}%，期望約 14.3%）</strong></div>` +
+    `<div>正選 / 特別號：<strong>${main} / ${special}</strong></div>` +
+    `<div>最近出現：<strong>${last}</strong></div>` +
+    `<div>平均間距：<strong>${avg} 期</strong></div>`;
+}
+
+function renderHistory() {
+  const table = document.getElementById("historyTable");
+  const status = document.getElementById("historyStatus");
+  if (!full.length) {
+    status.textContent = "尚未讀取結果。";
+    table.innerHTML = "";
+    return;
+  }
+  closeNumberPopover();
+  const filter = historyFilterNumber();
+  const shown = full.map((result, index) => ({ result, index })).filter(({ result }) => {
+    if (filter.state !== "number") return true;
+    return ballsOf(result).includes(filter.number);
+  });
+  if (filter.state === "invalid") {
+    status.textContent = "請輸入 1–49 的整數。";
+  } else if (filter.state === "number") {
+    const main = full.filter(result => result.numbers.includes(filter.number)).length;
+    const special = full.filter(result => result.special === filter.number).length;
+    status.textContent = `號碼 ${filter.number}：${shown.length} / ${full.length} 期包含此號碼（正選 ${main}、特別號 ${special}）。下表只顯示這些日期。`;
+  } else {
+    status.textContent = `顯示全部 ${full.length} 期。點擊號碼可在所有期數中高亮，並查看統計。`;
+  }
+  const head = `<thead><tr><th>#</th><th>Date</th><th>Number 1</th><th>Number 2</th><th>Number 3</th><th>Number 4</th><th>Number 5</th><th>Number 6</th><th>Special</th></tr></thead>`;
+  const body = shown.map(({ result, index }) => {
+    const balls = ballsOf(result);
+    const rowClass = selected !== null && balls.includes(selected) ? "selected-row" : "";
+    const cells = Array.from({ length: 6 }, (_, cell) => result.numbers[cell])
+      .map(number => historyNumberCell(number, filter))
+      .join("");
+    return `<tr class="${rowClass}" data-numbers="${balls.join(",")}"><td>${index}</td><td>${result.date}</td>${cells}${historyNumberCell(result.special, filter)}</tr>`;
+  }).join("");
+  const empty = filter.state === "number" ? `沒有期數包含 ${filter.number}` : "沒有結果";
+  table.innerHTML = head + `<tbody>${body || `<tr><td colspan="9" class="text-secondary">${empty}</td></tr>`}</tbody>`;
+}
+
+function historyNumberCell(number, filter) {
+  if (number == null) return "<td></td>";
+  const html = numCell(number, true);
+  const marked = filter.state === "number" && number === filter.number
+    ? html.replace('class="numbtn', 'class="numbtn filter-hit')
+    : html;
+  return `<td>${marked}</td>`;
+}
 
 function renderPairs(page = 1) {
   closeNumberPopover();
