@@ -282,9 +282,8 @@ function numCell(number, withPopover = false) {
   const popoverAction = withPopover ? `; showNumberPopover(this, ${number})` : "";
   return `<button class="numbtn${picked}" data-number="${number}" aria-pressed="${number === selected}" onclick="pick(${number})${popoverAction}">${number}</button>`;
 }
-function pick(number) {
-  selected = selected === number ? null : number;
-  document.querySelectorAll(".numbtn[data-number]").forEach(button => {
+function applySelection() {
+  document.querySelectorAll(".numbtn[data-number], .due-chip[data-number]").forEach(button => {
     const active = Number(button.dataset.number) === selected;
     button.classList.toggle("picked", active);
     button.setAttribute("aria-pressed", String(active));
@@ -296,9 +295,15 @@ function pick(number) {
     const numbers = row.dataset.numbers.split(",").map(Number);
     row.classList.toggle("selected-row", selected !== null && numbers.includes(selected));
   });
-  document.querySelectorAll(".due-chip[data-number]").forEach(chip => {
-    chip.classList.toggle("picked", Number(chip.dataset.number) === selected);
-  });
+}
+function pick(number) {
+  selected = selected === number ? null : number;
+  applySelection();
+}
+function clearSelection() {
+  if (selected === null) return;
+  selected = null;
+  applySelection();
 }
 function showSection(id) {
   closeNumberPopover();
@@ -432,10 +437,14 @@ function showNumberPopover(button, number) {
 }
 
 document.addEventListener("click", event => {
-  if (numberPopover && !numberPopover.button.contains(event.target) && !event.target.closest(".popover")) closeNumberPopover();
+  if (event.target.closest(".numbtn, .due-chip, .popover")) return;
+  clearSelection();
+  closeNumberPopover();
 });
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape") closeNumberPopover();
+  if (event.key !== "Escape") return;
+  clearSelection();
+  closeNumberPopover();
 });
 
 function historyFilterNumber() {
