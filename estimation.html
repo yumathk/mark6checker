@@ -19,10 +19,10 @@
 #historyTable thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg); }
 .number-popover { max-width: 20rem; }
 .due-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.due-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; border: 1px solid #ffc107; background: #3a3114; color: inherit; border-radius: 6px; padding: 0.35rem 0.55rem; text-align: left; cursor: pointer; }
+.due-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; max-width: 16rem; border: 1px solid #ffc107; background: #3a3114; color: inherit; border-radius: 6px; padding: 0.35rem 0.55rem; text-align: left; cursor: pointer; }
 .due-chip.over { border-color: #ff8a80; }
 .due-chip .due-num { font-weight: 800; font-size: 1rem; line-height: 1.1; }
-.due-chip small { color: #ced4da; font-size: 0.72rem; line-height: 1.25; }
+.due-chip small { color: #ced4da; font-size: 0.72rem; line-height: 1.25; white-space: normal; }
 .due-chip.picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
 .due-chip.picked small { color: #343a40; }
 td.cold, td.mid, td.warm, td.hot, td.outside { color: #212529; }
@@ -43,6 +43,10 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
   .table th, .table td { padding: 0.2rem; white-space: nowrap; }
   .trend-table-scroll { max-height: 70vh; overflow: auto; }
   #heatTable thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg); }
+  .history-toolbar { position: static; }
+  .due-list { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 0.25rem; }
+  .due-chip { flex: 0 0 auto; width: 11.5rem; }
+  .history-table-scroll { max-height: none; overflow-x: auto; overflow-y: visible; }
 }
 </style>
 </head>
@@ -120,8 +124,8 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 
   <section id="history" class="d-none" data-panel="history">
     <h1 class="h5">所有歷史結果</h1>
+    <div id="historyDue" class="mb-2"></div>
     <div class="history-toolbar pb-2">
-      <div id="historyDue" class="mb-2"></div>
       <div class="row g-2 align-items-end">
         <div class="col-auto">
           <label for="historyFilter" class="form-label small mb-1">搜尋號碼（1–49）</label>
@@ -133,7 +137,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
       </div>
       <div id="historyStatus" class="small text-secondary mt-2">點擊號碼可在所有期數中高亮，並查看統計。搜尋後只顯示包含該號碼的日期。</div>
     </div>
-    <div class="table-responsive trend-table-scroll">
+    <div class="table-responsive history-table-scroll">
       <table id="historyTable" class="table table-sm table-striped table-bordered align-middle text-center mb-0"></table>
     </div>
   </section>
