@@ -18,6 +18,13 @@
 .history-toolbar { position: sticky; top: 56px; z-index: 3; background: var(--bs-body-bg); }
 #historyTable thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg); }
 .number-popover { max-width: 20rem; }
+.due-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.due-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; border: 1px solid #ffc107; background: #3a3114; color: inherit; border-radius: 6px; padding: 0.35rem 0.55rem; text-align: left; cursor: pointer; }
+.due-chip.over { border-color: #ff8a80; }
+.due-chip .due-num { font-weight: 800; font-size: 1rem; line-height: 1.1; }
+.due-chip small { color: #ced4da; font-size: 0.72rem; line-height: 1.25; }
+.due-chip.picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
+.due-chip.picked small { color: #343a40; }
 td.cold, td.mid, td.warm, td.hot, td.outside { color: #212529; }
 td.cold { background-color: #9ec5f5 !important; }
 td.mid { background-color: #495057 !important; color: #f8f9fa; }
@@ -114,6 +121,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
   <section id="history" class="d-none" data-panel="history">
     <h1 class="h5">所有歷史結果</h1>
     <div class="history-toolbar pb-2">
+      <div id="historyDue" class="mb-2"></div>
       <div class="row g-2 align-items-end">
         <div class="col-auto">
           <label for="historyFilter" class="form-label small mb-1">搜尋號碼（1–49）</label>
@@ -288,6 +296,9 @@ function pick(number) {
     const numbers = row.dataset.numbers.split(",").map(Number);
     row.classList.toggle("selected-row", selected !== null && numbers.includes(selected));
   });
+  document.querySelectorAll(".due-chip[data-number]").forEach(chip => {
+    chip.classList.toggle("picked", Number(chip.dataset.number) === selected);
+  });
 }
 function showSection(id) {
   closeNumberPopover();
@@ -440,8 +451,7 @@ function clearHistoryFilter() {
   renderHistory();
 }
 
-function historySummary(number) {
-  if (!full.length) return "";
+function intervalStats(number) {
   let main = 0;
   let special = 0;
   let gap = null;
@@ -461,14 +471,60 @@ function historySummary(number) {
     if (previous !== null) gaps.push(index - previous);
     previous = index;
   });
-  const total = main + special;
-  const rate = (total / full.length * 100).toFixed(1);
-  const avg = gaps.length ? (gaps.reduce((sum, value) => sum + value, 0) / gaps.length).toFixed(1) : "—";
-  const last = lastDate ? `${lastDate}（距今 ${gap} 期）` : "未出現";
-  return `<div>全部 ${full.length} 期：<strong>${total} 次（${rate}%，期望約 14.3%）</strong></div>` +
-    `<div>正選 / 特別號：<strong>${main} / ${special}</strong></div>` +
+  const avg = gaps.length ? gaps.reduce((sum, value) => sum + value, 0) / gaps.length : null;
+  return { main, special, total: main + special, gap, lastDate, avg, samples: gaps.length };
+}
+
+function intervalStatus(row) {
+  if (row.avg == null || row.gap == null) return "樣本不足";
+  const delta = row.avg - row.gap;
+  if (delta > 0.05) return `還差 ${delta.toFixed(1)} 期`;
+  if (delta < -0.05) return `已超過 ${(-delta).toFixed(1)} 期`;
+  return "已到平均間距";
+}
+
+function dueNumbers() {
+  return Array.from({ length: 49 }, (_, index) => ({ number: index + 1, ...intervalStats(index + 1) }))
+    .filter(row => row.avg != null && row.gap != null && row.samples >= 2 && row.gap >= row.avg - 1 && row.gap <= row.avg + 1)
+    .sort((a, b) => {
+      const aShort = a.gap < a.avg ? 0 : 1;
+      const bShort = b.gap < b.avg ? 0 : 1;
+      return aShort - bShort || Math.abs(a.gap - a.avg) - Math.abs(b.gap - b.avg) || a.number - b.number;
+    });
+}
+
+function renderDueNumbers() {
+  const box = document.getElementById("historyDue");
+  if (!full.length) {
+    box.innerHTML = "";
+    return;
+  }
+  const due = dueNumbers();
+  if (!due.length) {
+    box.innerHTML = `<div class="small text-secondary">暫無臨近平均間距的號碼（距今與平均相差 1 期以內）。</div>`;
+    return;
+  }
+  const chips = due.map(row => {
+    const picked = row.number === selected ? " picked" : "";
+    const over = row.gap >= row.avg ? " over" : "";
+    return `<button type="button" class="due-chip${over}${picked}" data-number="${row.number}" aria-pressed="${row.number === selected}" onclick="pick(${row.number}); showNumberPopover(this, ${row.number})">` +
+      `<span class="due-num">${row.number}</span>` +
+      `<small>距今 ${row.gap} / 平均 ${row.avg.toFixed(1)} · 上次 ${row.lastDate}<br>${intervalStatus(row)}</small></button>`;
+  }).join("");
+  box.innerHTML = `<div class="small mb-1">臨近平均間距 <span class="text-secondary">黃邊是還差 1 期內，紅邊是已到或略超過。點擊可在下表高亮。這不是下期機率。</span></div><div class="due-list">${chips}</div>`;
+}
+
+function historySummary(number) {
+  if (!full.length) return "";
+  const row = intervalStats(number);
+  const rate = (row.total / full.length * 100).toFixed(1);
+  const avg = row.avg == null ? "—" : row.avg.toFixed(1);
+  const last = row.lastDate ? `${row.lastDate}（距今 ${row.gap} 期）` : "未出現";
+  return `<div>全部 ${full.length} 期：<strong>${row.total} 次（${rate}%，期望約 14.3%）</strong></div>` +
+    `<div>正選 / 特別號：<strong>${row.main} / ${row.special}</strong></div>` +
     `<div>最近出現：<strong>${last}</strong></div>` +
-    `<div>平均間距：<strong>${avg} 期</strong></div>`;
+    `<div>平均間距：<strong>${avg} 期</strong></div>` +
+    `<div>間距狀態：<strong>${intervalStatus(row)}</strong></div>`;
 }
 
 function renderHistory() {
@@ -477,9 +533,11 @@ function renderHistory() {
   if (!full.length) {
     status.textContent = "尚未讀取結果。";
     table.innerHTML = "";
+    document.getElementById("historyDue").innerHTML = "";
     return;
   }
   closeNumberPopover();
+  renderDueNumbers();
   const filter = historyFilterNumber();
   const shown = full.map((result, index) => ({ result, index })).filter(({ result }) => {
     if (filter.state !== "number") return true;
