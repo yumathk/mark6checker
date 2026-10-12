@@ -70,12 +70,21 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 </nav>
 
 <main class="container-fluid py-3">
-  <div class="input-group mb-2">
-    <input id="jsonUrl" class="form-control" type="text" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json">
-    <button class="btn btn-primary" type="button" onclick="loadJson()">讀取並估算</button>
+  <div class="p-2">
+    <a data-bs-toggle="collapse" href="#getJSONGrid" role="button" aria-expanded="false" aria-controls="getJSONGrid">
+      Hide the grid
+    </a>
   </div>
-  <div id="status" class="small text-secondary mb-2"></div>
-  <p class="small text-secondary">30 期合計：<span class="total-legend total-cold">0–3 冷</span> <span class="total-legend total-normal">4–5 正常</span> <span class="total-legend total-hot">6+ 熱</span>。每個號碼的五期格：<span class="total-legend total-cold">0–1 冷</span> <span class="total-legend total-normal">2–3 正常</span> <span class="total-legend total-hot">4–5 熱</span>。</p>
+  <div class="collapse show" id="getJSONGrid">
+    <div class="card card-body">
+      <div class="input-group mb-2">
+        <input id="jsonUrl" class="form-control" type="text" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json">
+        <button class="btn btn-primary" type="button" onclick="loadJson()">讀取並估算</button>
+      </div>
+      <div id="status" class="small text-secondary mb-2"></div>
+      <p class="small text-secondary">30 期合計：<span class="total-legend total-cold">0–3 冷</span> <span class="total-legend total-normal">4–5 正常</span> <span class="total-legend total-hot">6+ 熱</span>。每個號碼的五期格：<span class="total-legend total-cold">0–1 冷</span> <span class="total-legend total-normal">2–3 正常</span> <span class="total-legend total-hot">4–5 熱</span>。</p>
+    </div>
+  </div>
 
   <section id="windows" class="d-none" data-panel="windows">
     <h1 class="h5">區間 × 5 期窗口</h1>
@@ -533,7 +542,7 @@ function historySummary(number) {
   const rate = (row.total / full.length * 100).toFixed(1);
   const avg = row.avg == null ? "—" : row.avg.toFixed(1);
   const last = row.lastDate ? `${row.lastDate}（距今 ${row.gap} 期）` : "未出現";
-  return `<div>全部 ${full.length} 期：<strong>${row.total} 次（${rate}%，期望約 14.3%）</strong></div>` +
+  return `<div>全部 ${full.length} 期：<strong>${row.total} 次（${rate}%）</strong></div>` +
     `<div>正選 / 特別號：<strong>${row.main} / ${row.special}</strong></div>` +
     `<div>最近出現：<strong>${last}</strong></div>` +
     `<div>平均間距：<strong>${avg} 期</strong></div>` +
