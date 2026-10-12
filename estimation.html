@@ -21,6 +21,9 @@
 .due-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .due-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; max-width: 16rem; border: 1px solid #ffc107; background: #3a3114; color: inherit; border-radius: 6px; padding: 0.35rem 0.55rem; text-align: left; cursor: pointer; }
 .due-chip.over { border-color: #ff8a80; }
+.due-chip.omit { border-color: #6ea8fe; }
+.due-chip.back { border-color: #75b798; }
+.due-chip.repeat { border-color: #ced4da; }
 .due-chip .due-num { font-weight: 800; font-size: 1rem; line-height: 1.1; }
 .due-chip small { color: #ced4da; font-size: 0.72rem; line-height: 1.25; white-space: normal; }
 .due-chip.picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
@@ -134,6 +137,8 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
   <section id="history" class="d-none" data-panel="history">
     <h1 class="h5">所有歷史結果</h1>
     <div id="historyDue" class="mb-2"></div>
+    <div id="historyOmit" class="mb-2"></div>
+    <div id="historyRepeat" class="mb-2"></div>
     <div class="history-toolbar pb-2">
       <div class="row g-2 align-items-end">
         <div class="col-auto">
@@ -228,6 +233,7 @@ const temperatures = new Set(["冷", "正常", "熱"]);
 let selected = null;
 let pairPage = 1;
 let numberPopover = null;
+let intervalCache = [];
 
 const pairOptions = Array.from({ length: 49 }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`).join("");
 document.getElementById("pairNumber").insertAdjacentHTML("beforeend", pairOptions);
@@ -368,6 +374,7 @@ async function loadJson() {
 }
 
 function render() {
+  intervalCache = [];
   if (!draws.length) return;
   const rows = Array.from({ length: 49 }, (_, index) => numberRow(index + 1))
     .map(row => ({ ...row, standard: standardOf(row.c30) }))
@@ -473,17 +480,30 @@ function clearHistoryFilter() {
   renderHistory();
 }
 
+function medianOf(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((first, second) => first - second);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function formatGap(value) {
+  if (value == null) return "—";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
 function intervalStats(number) {
+  if (intervalCache[number]) return intervalCache[number];
   let main = 0;
   let special = 0;
   let gap = null;
   let lastDate = null;
   let previous = null;
   const gaps = [];
+  const hits = [];
   full.forEach((result, index) => {
     const inMain = result.numbers.includes(number);
     const inSpecial = result.special === number;
     if (!inMain && !inSpecial) return;
+    hits.push(index);
     if (inMain) main++;
     if (inSpecial) special++;
     if (gap === null) {
@@ -494,7 +514,18 @@ function intervalStats(number) {
     previous = index;
   });
   const avg = gaps.length ? gaps.reduce((sum, value) => sum + value, 0) / gaps.length : null;
-  return { main, special, total: main + special, gap, lastDate, avg, samples: gaps.length };
+  const row = { main, special, total: main + special, gap, lastDate, avg, samples: gaps.length, gaps, hits, median: medianOf(gaps), longest: gaps.length ? Math.max(...gaps) : null };
+  intervalCache[number] = row;
+  return row;
+}
+function gapShapeText(row) {
+  if (row.avg == null || row.gap == null || row.samples < 2) return "樣本不足";
+  const longer = row.gaps.filter(value => row.gap > value).length;
+  const equal = row.gaps.filter(value => row.gap === value).length;
+  const shorter = row.gaps.length - longer - equal;
+  if (longer === row.gaps.length) return `長過全部 ${row.gaps.length} 段已完成間距`;
+  if (longer === 0 && equal === 0) return `短過全部 ${row.gaps.length} 段已完成間距`;
+  return `長過 ${longer} / ${row.gaps.length} 段，短過 ${shorter} 段`;
 }
 
 function intervalStatus(row) {
@@ -515,6 +546,11 @@ function dueNumbers() {
     });
 }
 
+function statChip(number, extraClass, detail) {
+  const picked = number === selected ? " picked" : "";
+  return `<button type="button" class="due-chip${extraClass}${picked}" data-number="${number}" aria-pressed="${number === selected}" onclick="pick(${number}); showNumberPopover(this, ${number})">` +
+    `<span class="due-num">${number}</span><small>${detail}</small></button>`;
+}
 function renderDueNumbers() {
   const box = document.getElementById("historyDue");
   if (!full.length) {
@@ -527,13 +563,73 @@ function renderDueNumbers() {
     return;
   }
   const chips = due.map(row => {
-    const picked = row.number === selected ? " picked" : "";
     const over = row.gap >= row.avg ? " over" : "";
-    return `<button type="button" class="due-chip${over}${picked}" data-number="${row.number}" aria-pressed="${row.number === selected}" onclick="pick(${row.number}); showNumberPopover(this, ${row.number})">` +
-      `<span class="due-num">${row.number}</span>` +
-      `<small>距今 ${row.gap} / 平均 ${row.avg.toFixed(1)} · 上次 ${row.lastDate}<br>${intervalStatus(row)}</small></button>`;
+    return statChip(row.number, over, `距今 ${row.gap} / 平均 ${row.avg.toFixed(1)} · 上次 ${row.lastDate}<br>${intervalStatus(row)}`);
   }).join("");
   box.innerHTML = `<div class="small mb-1">臨近平均間距 <span class="text-secondary">黃邊是還差 1 期內，紅邊是已到或略超過。點擊可在下表高亮。這不是下期機率。</span></div><div class="due-list">${chips}</div>`;
+}
+function renderOmissions() {
+  const box = document.getElementById("historyOmit");
+  const rows = Array.from({ length: 49 }, (_, index) => ({ number: index + 1, ...intervalStats(index + 1) }))
+    .sort((first, second) => (second.gap ?? full.length) - (first.gap ?? full.length) || first.number - second.number)
+    .slice(0, 10);
+  const chips = rows.map(row => statChip(row.number, " omit", row.lastDate ? `距今 ${row.gap} 期 · 上次 ${row.lastDate}<br>${gapShapeText(row)}` : "尚未出現")).join("");
+  box.innerHTML = `<div class="small mb-1">最久未出 <span class="text-secondary">目前距今最長的 10 個號碼。點擊可看中位、最長間距，並在下表高亮。</span></div><div class="due-list">${chips}</div>`;
+}
+function returnRate(number) {
+  const hits = new Set(intervalStats(number).hits);
+  let within1 = 0;
+  let within2 = 0;
+  let samples1 = 0;
+  let samples2 = 0;
+  hits.forEach(index => {
+    if (index >= 1) {
+      samples1++;
+      if (hits.has(index - 1)) within1++;
+    }
+    if (index >= 2) {
+      samples2++;
+      if (hits.has(index - 1) || hits.has(index - 2)) within2++;
+    }
+  });
+  return { number, within1, samples1, within2, samples2 };
+}
+function ratePercent(count, samples) {
+  return samples ? `${Math.round(count / samples * 100)}%` : "—";
+}
+function meanRate(rows, countKey, sampleKey) {
+  const usable = rows.filter(row => row[sampleKey] >= 5);
+  if (!usable.length) return null;
+  return usable.reduce((sum, row) => sum + row[countKey] / row[sampleKey], 0) / usable.length;
+}
+function renderRepeats() {
+  const box = document.getElementById("historyRepeat");
+  if (full.length < 2) {
+    box.innerHTML = `<div class="small text-secondary">跟上期重覆需要最少 2 期。</div>`;
+    return;
+  }
+  const overlaps = [];
+  for (let index = 0; index < full.length - 1; index++) {
+    const newer = new Set(ballsOf(full[index]));
+    overlaps.push(ballsOf(full[index + 1]).filter(number => newer.has(number)));
+  }
+  const average = overlaps.reduce((sum, shared) => sum + shared.length, 0) / overlaps.length;
+  const repeated = overlaps[0];
+  const rates = Array.from({ length: 49 }, (_, index) => returnRate(index + 1));
+  const mean1 = meanRate(rates, "within1", "samples1");
+  const mean2 = meanRate(rates, "within2", "samples2");
+  const usually = row => (row.samples1 >= 5 && mean1 != null && row.within1 / row.samples1 >= mean1) ||
+    (row.samples2 >= 5 && mean2 != null && row.within2 / row.samples2 >= mean2);
+  const latest = ballsOf(full[0]).map(number => rates[number - 1])
+    .sort((first, second) => Number(usually(second)) - Number(usually(first)) ||
+      second.within1 / (second.samples1 || 1) - first.within1 / (first.samples1 || 1) || first.number - second.number);
+  const overlapChips = repeated.map(number => statChip(number, " repeat", "今期與上期都有")).join("");
+  const returnChips = latest.map(row => statChip(row.number, usually(row) ? " back" : " repeat",
+    `1期內 ${ratePercent(row.within1, row.samples1)}（${row.within1}/${row.samples1}）<br>2期內 ${ratePercent(row.within2, row.samples2)}（${row.within2}/${row.samples2}）`)).join("");
+  const overlapText = repeated.length ? `重覆 ${repeated.length} 個` : "沒有重覆號碼";
+  box.innerHTML = `<div class="small mb-1">跟上期重覆 <span class="text-secondary">今期${overlapText}，歷史平均 ${average.toFixed(1)} 個（${overlaps.length} 段）。綠邊是回頭比例不低於全部號碼平均。這不是下期機率。</span></div>` +
+    (overlapChips ? `<div class="due-list mb-2">${overlapChips}</div>` : "") +
+    `<div class="small mb-1">今期號碼回頭 <span class="text-secondary">過去每次出現後，下一期或兩期內再出的比例。</span></div><div class="due-list">${returnChips}</div>`;
 }
 
 function historySummary(number) {
@@ -545,7 +641,8 @@ function historySummary(number) {
   return `<div>全部 ${full.length} 期：<strong>${row.total} 次（${rate}%）</strong></div>` +
     `<div>正選 / 特別號：<strong>${row.main} / ${row.special}</strong></div>` +
     `<div>最近出現：<strong>${last}</strong></div>` +
-    `<div>平均間距：<strong>${avg} 期</strong></div>` +
+    `<div>平均 / 中位 / 最長間距：<strong>${avg} / ${formatGap(row.median)} / ${formatGap(row.longest)} 期</strong></div>` +
+    `<div>今次間距位置：<strong>${gapShapeText(row)}</strong></div>` +
     `<div>間距狀態：<strong>${intervalStatus(row)}</strong></div>`;
 }
 
@@ -556,10 +653,14 @@ function renderHistory() {
     status.textContent = "尚未讀取結果。";
     table.innerHTML = "";
     document.getElementById("historyDue").innerHTML = "";
+    document.getElementById("historyOmit").innerHTML = "";
+    document.getElementById("historyRepeat").innerHTML = "";
     return;
   }
   closeNumberPopover();
   renderDueNumbers();
+  renderOmissions();
+  renderRepeats();
   const filter = historyFilterNumber();
   const shown = full.map((result, index) => ({ result, index })).filter(({ result }) => {
     if (filter.state !== "number") return true;
