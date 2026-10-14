@@ -2,7 +2,7 @@
 
 Static pages for checking Hong Kong Mark Six results. Draw history lives in [results.json](results.json): newest first, each row is a date, six main numbers, and one special number. Open [estimation.html](estimation.html) directly, or host the folder on GitHub Pages. No build step is required.
 
-Press **讀取並估算** to load the JSON. The special number is counted together with the six main numbers unless a section says otherwise. Counts, gaps, and highlights are descriptions of past draws, not a next-draw probability.
+Load results with **從網址讀取**, a local `.json` file, or pasted JSON. The file and pasted text stay in the browser. The special number is counted together with the six main numbers unless a section says otherwise. Counts, gaps, and highlights are descriptions of past draws, not a next-draw probability.
 
 ## Estimation page
 

@@ -81,8 +81,19 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
   <div class="collapse show" id="getJSONGrid">
     <div class="card card-body">
       <div class="input-group mb-2">
-        <input id="jsonUrl" class="form-control" type="text" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json">
-        <button class="btn btn-primary" type="button" onclick="loadJson()">讀取並估算</button>
+        <input id="jsonUrl" class="form-control" type="text" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json" aria-label="JSON 網址">
+        <button class="btn btn-primary" type="button" onclick="loadJson()">從網址讀取</button>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-md-5">
+          <label class="form-label small mb-1" for="jsonFile">或選擇本機 JSON 檔</label>
+          <input id="jsonFile" class="form-control" type="file" accept="application/json,.json" onchange="loadJsonFile(this)">
+        </div>
+        <div class="col-md-7">
+          <label class="form-label small mb-1" for="jsonPaste">或貼上 JSON</label>
+          <textarea id="jsonPaste" class="form-control font-monospace" rows="4" placeholder='[{"date":"2026-10-13","numbers":[3,5,9,17,21,26],"special":38}]'></textarea>
+          <button class="btn btn-outline-primary btn-sm mt-2" type="button" onclick="loadJsonText()">用貼上的 JSON 估算</button>
+        </div>
       </div>
       <div id="status" class="small text-secondary mb-2"></div>
       <p class="small text-secondary">30 期合計：<span class="total-legend total-cold">0–3 冷</span> <span class="total-legend total-normal">4–5 正常</span> <span class="total-legend total-hot">6+ 熱</span>。每個號碼的五期格：<span class="total-legend total-cold">0–1 冷</span> <span class="total-legend total-normal">2–3 正常</span> <span class="total-legend total-hot">4–5 熱</span>。</p>
@@ -355,22 +366,59 @@ function th(label, key) {
   return `<th onclick="setSort('${key}')">${label}${sortKey === key ? " ▼" : ""}</th>`;
 }
 
+function parseResults(text) {
+  const data = JSON.parse(String(text).replace(/^\uFEFF/, "").trim());
+  return Array.isArray(data) ? data : [data];
+}
+function applyResults(data, source) {
+  if (!Array.isArray(data)) throw new Error("JSON 不是陣列");
+  const bad = data.findIndex(row => !row || typeof row.date !== "string" || !Array.isArray(row.numbers) || !Number.isInteger(row.special));
+  if (bad >= 0) throw new Error(`第 ${bad + 1} 筆格式不對，需要 date、numbers、special`);
+  full = data;
+  draws = full.slice(0, 30);
+  const status = document.getElementById("status");
+  status.textContent = `已讀 ${full.length} 期（${source}），估算用最新 ${draws.length} 期` +
+    (draws[0] ? `（${draws[0].date}）` : "");
+  render();
+}
 async function loadJson() {
   const status = document.getElementById("status");
   status.textContent = "讀取中…";
   try {
-    const response = await fetch(document.getElementById("jsonUrl").value);
+    const response = await fetch(document.getElementById("jsonUrl").value.trim());
     if (!response.ok) throw new Error(response.status + " " + response.statusText);
-    const data = await response.json();
-    if (!Array.isArray(data)) throw new Error("JSON 不是陣列");
-    full = data;
-    draws = full.slice(0, 30);
-    status.textContent = `已讀 ${full.length} 期，估算用最新 ${draws.length} 期` +
-      (draws[0] ? `（${draws[0].date}）` : "");
-    render();
+    applyResults(await response.json(), "網址");
   } catch (error) {
-    status.innerHTML = "無法讀取 JSON：" + error + "。file:// 直接開頁時，瀏覽器可能擋住讀取。";
+    status.textContent = "無法讀取 JSON：" + error + "。file:// 直接開頁時，瀏覽器可能擋住讀取網址。可改貼上 JSON 或選擇本機檔案。";
   }
+}
+function loadJsonText() {
+  const status = document.getElementById("status");
+  try {
+    const text = document.getElementById("jsonPaste").value;
+    if (!text.trim()) throw new Error("請先貼上 JSON");
+    applyResults(parseResults(text), "貼上");
+  } catch (error) {
+    status.textContent = "無法解析貼上的 JSON：" + error;
+  }
+}
+function loadJsonFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const status = document.getElementById("status");
+  status.textContent = "讀取中…";
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      applyResults(parseResults(reader.result), file.name);
+    } catch (error) {
+      status.textContent = "無法解析本機檔案：" + error;
+    }
+  };
+  reader.onerror = () => {
+    status.textContent = "無法讀取本機檔案。";
+  };
+  reader.readAsText(file);
 }
 
 function render() {
