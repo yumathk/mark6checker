@@ -6,7 +6,7 @@ Load results with **從網址讀取**, a local `.json` file, or pasted JSON. The
 
 ## Estimation page
 
-[estimation.html](estimation.html) has five sections.
+[estimation.html](estimation.html) has six sections.
 
 ### 每個號碼的 5 期走勢
 
@@ -43,3 +43,16 @@ The popover shows the all-history count, main versus special split, last appeara
 ### 號碼組合
 
 Two-number and three-number combinations in the latest 30 draws, including the special number. Filter by one or more required numbers and a minimum number of times they appeared together. Results are paged 100 rows at a time. Click a number for the same statistics popover.
+
+### 隨機分組
+
+Load at least 30 draws, then choose **3組（16、16、17）** or **4組（12、12、12、13）** and click **隨機生成**.
+
+- Every number from 1 to 49 appears exactly once across the groups, with no duplicates within or between groups.
+- Each group contains cold, normal, and hot numbers using the latest 30 draws, including special numbers: 0–3 cold, 4–5 normal, and 6+ hot. Category counts are spread as evenly as group capacity allows.
+- Generation stops with an explanation if any category has fewer numbers than the chosen number of groups. The category requirements are not silently relaxed.
+- Each group shows its size, category counts, and colour-coded numbers in ascending order. Tap or click a number for the same statistics popover, including its trend score, recent counts, activity, and verdict. Viewing statistics does not change the generated groups.
+- **複製第N組** copies only that group's numbers, separated by commas, without a heading. A read-only text field also contains the comma-separated list; if automatic copying fails, it is selected for manual copying.
+- Generate again to reshuffle. Changing the group count or loading new results clears the generated lists and any open number popover.
+
+Random grouping is a way to organise the numbers, not a prediction of future draws.

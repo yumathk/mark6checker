@@ -69,6 +69,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
         <li class="nav-item"><button type="button" class="nav-link" data-section="draws" onclick="showSection('draws')">每期區間分佈</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="history" onclick="showSection('history')">所有歷史結果</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="randomGroups" onclick="showSection('randomGroups')">隨機分組</button></li>
       </ul>
     </div>
   </div>
@@ -221,6 +222,21 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
       <button id="pairNext" type="button" class="btn btn-sm btn-outline-secondary" disabled onclick="renderPairs(pairPage + 1)">下一頁</button>
     </div>
   </section>
+  <section id="randomGroups" class="d-none" data-panel="randomGroups">
+    <h1 class="h5">隨機分組</h1>
+    <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+      <div>
+        <label for="randomGroupCount" class="form-label small">組數</label>
+        <select id="randomGroupCount" class="form-select form-select-sm" onchange="clearRandomGroups()">
+          <option value="3">3組（16、16、17）</option>
+          <option value="4">4組（12、12、12、13）</option>
+        </select>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="generateRandomGroups()">隨機生成</button>
+    </div>
+    <div id="randomGroupStatus" class="small text-secondary mb-3" role="status" aria-live="polite"></div>
+    <div id="randomGroupOutput"></div>
+  </section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
@@ -252,6 +268,7 @@ const copyPicked = new Set();
 let pairPage = 1;
 let numberPopover = null;
 let intervalCache = [];
+let generatedNumberGroups = [];
 
 const pairOptions = Array.from({ length: 49 }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`).join("");
 document.getElementById("pairNumber").insertAdjacentHTML("beforeend", pairOptions);
@@ -381,6 +398,24 @@ function toggleCopySelect() {
   syncCopyControls();
   updateCopyStatus();
 }
+async function writeClipboardText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.left = "-9999px";
+  document.body.appendChild(area);
+  try {
+    area.select();
+    if (!document.execCommand("copy")) throw new Error("copy failed");
+  } finally {
+    area.remove();
+  }
+}
 async function copySelectedNumbers() {
   if (!copySelectMode) return;
   const text = sortedCopyText();
@@ -389,20 +424,7 @@ async function copySelectedNumbers() {
     return;
   }
   try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const area = document.createElement("textarea");
-      area.value = text;
-      area.setAttribute("readonly", "");
-      area.style.position = "fixed";
-      area.style.left = "-9999px";
-      document.body.appendChild(area);
-      area.select();
-      const ok = document.execCommand("copy");
-      area.remove();
-      if (!ok) throw new Error("copy failed");
-    }
+    await writeClipboardText(text);
     resetCopySelection();
     updateCopyStatus(`已複製 ${text}`);
   } catch (error) {
@@ -461,6 +483,7 @@ function applyResults(data, source) {
   if (bad >= 0) throw new Error(`第 ${bad + 1} 筆格式不對，需要 date、numbers、special`);
   full = data;
   draws = full.slice(0, 30);
+  clearRandomGroups();
   const status = document.getElementById("status");
   status.textContent = `已讀 ${full.length} 期（${source}），估算用最新 ${draws.length} 期` +
     (draws[0] ? `（${draws[0].date}）` : "");
@@ -519,6 +542,99 @@ function render() {
   renderHistory();
   renderPairs();
   applyCopySelection();
+}
+
+function clearRandomGroups() {
+  closeNumberPopover();
+  generatedNumberGroups = [];
+  document.getElementById("randomGroupOutput").innerHTML = "";
+  document.getElementById("randomGroupStatus").textContent = "";
+}
+
+function splitNumberGroups(pools, sizes) {
+  const entries = Object.entries(pools);
+  const allNumbers = entries.flatMap(([, numbers]) => numbers);
+  if (entries.length !== 3 || allNumbers.length !== 49 || new Set(allNumbers).size !== 49 ||
+      allNumbers.some(number => !Number.isInteger(number) || number < 1 || number > 49) ||
+      sizes.reduce((sum, size) => sum + size, 0) !== 49 || sizes.some(size => size < 3)) {
+    throw new Error("分組資料無效，需要1至49且不重複");
+  }
+  const insufficient = entries.filter(([, numbers]) => numbers.length < sizes.length);
+  if (insufficient.length) {
+    throw new Error(insufficient.map(([category, numbers]) => `${category}碼只有${numbers.length}個`).join("、") + `，不能讓每組都有冷、正常、熱碼（需要各至少${sizes.length}個）`);
+  }
+  const shuffle = numbers => {
+    const shuffled = [...numbers];
+    for (let index = shuffled.length - 1; index > 0; index--) {
+      const target = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[target]] = [shuffled[target], shuffled[index]];
+    }
+    return shuffled;
+  };
+  const groups = sizes.map(() => []);
+  entries.forEach(([, numbers], categoryIndex) => {
+    const remaining = shuffle(numbers);
+    const categoryCounts = sizes.map(() => 0);
+    shuffle(sizes.map((_, index) => index)).forEach(index => {
+      groups[index].push(remaining.pop());
+      categoryCounts[index]++;
+    });
+    remaining.forEach(number => {
+      const reserved = entries.length - categoryIndex - 1;
+      const eligible = sizes.map((_, index) => index).filter(index => groups[index].length < sizes[index] - reserved);
+      const minimum = Math.min(...eligible.map(index => categoryCounts[index]));
+      const candidates = eligible.filter(index => categoryCounts[index] === minimum);
+      const target = candidates[Math.floor(Math.random() * candidates.length)];
+      groups[target].push(number);
+      categoryCounts[target]++;
+    });
+  });
+  return groups.map(group => group.sort((first, second) => first - second));
+}
+
+function generateRandomGroups() {
+  clearRandomGroups();
+  const status = document.getElementById("randomGroupStatus");
+  if (draws.length < 30) {
+    status.textContent = "請先載入至少30期結果，再按30期冷熱分組。";
+    return;
+  }
+  const count = Number(document.getElementById("randomGroupCount").value);
+  const sizes = count === 4 ? [12, 12, 12, 13] : [16, 16, 17];
+  const pools = { "冷": [], "正常": [], "熱": [] };
+  const classifications = Array.from({ length: 50 }, (_, number) => standardOf(countIn(draws.slice(0, 30), number)));
+  for (let number = 1; number <= 49; number++) pools[classifications[number]].push(number);
+  try {
+    generatedNumberGroups = splitNumberGroups(pools, sizes);
+    document.getElementById("randomGroupOutput").innerHTML = generatedNumberGroups.map((group, index) => {
+      const totals = Object.keys(pools).map(category => `${category} ${group.filter(number => classifications[number] === category).length}`).join(" / ");
+      const numbers = group.map(number => {
+        const css = classifications[number] === "熱" ? "total-hot" : classifications[number] === "冷" ? "total-cold" : "total-normal";
+        return `<span class="total-legend ${css}">${numCell(number, true)}</span>`;
+      }).join(" ");
+      return `<section class="border-bottom pb-3 mb-3"><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><h2 class="h6 mb-0">第${index + 1}組（${group.length}個）</h2><button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyRandomGroup(${index})">複製第${index + 1}組</button></div><div class="small text-secondary mb-2">${totals}</div><div class="d-flex flex-wrap gap-1 mb-2">${numbers}</div><label class="visually-hidden" for="randomGroupText${index}">第${index + 1}組逗號分隔號碼</label><textarea id="randomGroupText${index}" class="form-control form-control-sm" rows="2" readonly>${group.join(",")}</textarea></section>`;
+    }).join("");
+    status.textContent = `已生成${count}組，49個號碼各用一次；每組均含冷、正常、熱碼。`;
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+async function copyRandomGroup(index) {
+  const group = generatedNumberGroups[index];
+  if (!group) return;
+  const status = document.getElementById("randomGroupStatus");
+  try {
+    await writeClipboardText(group.join(","));
+    status.textContent = `已複製第${index + 1}組（${group.length}個號碼）`;
+  } catch (error) {
+    const field = document.getElementById(`randomGroupText${index}`);
+    if (field) {
+      field.focus();
+      field.select();
+    }
+    status.textContent = "無法自動複製，已選取該組號碼，可手動複製。";
+  }
 }
 
 function combinations(numbers, size) {
