@@ -228,7 +228,8 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
       <div>
         <label for="randomGroupCount" class="form-label small">組數</label>
         <select id="randomGroupCount" class="form-select form-select-sm" onchange="clearRandomGroups()">
-          <option value="3">3組（16、16、17）</option>
+          <option value="2">2組（24、25）</option>
+          <option value="3" selected>3組（16、16、17）</option>
           <option value="4">4組（12、12、12、13）</option>
         </select>
       </div>
@@ -600,7 +601,7 @@ function generateRandomGroups() {
     return;
   }
   const count = Number(document.getElementById("randomGroupCount").value);
-  const sizes = count === 4 ? [12, 12, 12, 13] : [16, 16, 17];
+  const sizes = count === 2 ? [24, 25] : count === 4 ? [12, 12, 12, 13] : [16, 16, 17];
   const pools = { "冷": [], "正常": [], "熱": [] };
   const classifications = Array.from({ length: 50 }, (_, number) => standardOf(countIn(draws.slice(0, 30), number)));
   for (let number = 1; number <= 49; number++) pools[classifications[number]].push(number);

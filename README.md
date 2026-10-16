@@ -46,7 +46,7 @@ Two-number and three-number combinations in the latest 30 draws, including the s
 
 ### 隨機分組
 
-Load at least 30 draws, then choose **3組（16、16、17）** or **4組（12、12、12、13）** and click **隨機生成**.
+Load at least 30 draws, then choose **2組（24、25）**, **3組（16、16、17）**, or **4組（12、12、12、13）** and click **隨機生成**.
 
 - Every number from 1 to 49 appears exactly once across the groups, with no duplicates within or between groups.
 - Each group contains cold, normal, and hot numbers using the latest 30 draws, including special numbers: 0–3 cold, 4–5 normal, and 6+ hot. Category counts are spread as evenly as group capacity allows.
