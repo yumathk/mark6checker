@@ -228,10 +228,14 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
       <div>
         <label for="randomGroupCount" class="form-label small">組數</label>
         <select id="randomGroupCount" class="form-select form-select-sm" onchange="clearRandomGroups()">
-          <option value="2">2組（24、25）</option>
-          <option value="3" selected>3組（16、16、17）</option>
-          <option value="4">4組（12、12、12、13）</option>
+          <option value="2">2組</option>
+          <option value="3" selected>3組</option>
+          <option value="4">4組</option>
         </select>
+      </div>
+      <div>
+        <label for="randomGroupRanges" class="form-label small">號碼範圍（留空為1–49）</label>
+        <input id="randomGroupRanges" type="text" class="form-control form-control-sm" placeholder="{1-20,31-40}" oninput="clearRandomGroups()">
       </div>
       <button type="button" class="btn btn-primary btn-sm" onclick="generateRandomGroups()">隨機生成</button>
     </div>
@@ -552,13 +556,30 @@ function clearRandomGroups() {
   document.getElementById("randomGroupStatus").textContent = "";
 }
 
+function parseGroupRanges(text) {
+  let ranges = text.trim();
+  if (!ranges) return Array.from({ length: 49 }, (_, index) => index + 1);
+  if (ranges.startsWith("{") && ranges.endsWith("}")) ranges = ranges.slice(1, -1);
+  const numbers = new Set();
+  for (const part of ranges.split(",")) {
+    const match = part.trim().match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if (!match) throw new Error("號碼範圍格式無效，請輸入如 {1-20,31-40}");
+    const start = Number(match[1]);
+    const end = match[2] === undefined ? start : Number(match[2]);
+    if (start < 1 || end > 49 || start > end) throw new Error("範圍必須介乎1至49，起點不可大於終點");
+    for (let number = start; number <= end; number++) numbers.add(number);
+  }
+  return [...numbers].sort((first, second) => first - second);
+}
+
 function splitNumberGroups(pools, sizes) {
   const entries = Object.entries(pools);
   const allNumbers = entries.flatMap(([, numbers]) => numbers);
-  if (entries.length !== 3 || allNumbers.length !== 49 || new Set(allNumbers).size !== 49 ||
+  if (entries.length !== 3 || !allNumbers.length || new Set(allNumbers).size !== allNumbers.length ||
       allNumbers.some(number => !Number.isInteger(number) || number < 1 || number > 49) ||
-      sizes.reduce((sum, size) => sum + size, 0) !== 49 || sizes.some(size => size < 3)) {
-    throw new Error("分組資料無效，需要1至49且不重複");
+      ![2, 3, 4].includes(sizes.length) || sizes.reduce((sum, size) => sum + size, 0) !== allNumbers.length ||
+      sizes.some(size => !Number.isInteger(size) || size < 3)) {
+    throw new Error("分組資料無效：號碼須介乎1至49且不重複，每組至少需要3個號碼");
   }
   const insufficient = entries.filter(([, numbers]) => numbers.length < sizes.length);
   if (insufficient.length) {
@@ -600,12 +621,16 @@ function generateRandomGroups() {
     status.textContent = "請先載入至少30期結果，再按30期冷熱分組。";
     return;
   }
-  const count = Number(document.getElementById("randomGroupCount").value);
-  const sizes = count === 2 ? [24, 25] : count === 4 ? [12, 12, 12, 13] : [16, 16, 17];
-  const pools = { "冷": [], "正常": [], "熱": [] };
-  const classifications = Array.from({ length: 50 }, (_, number) => standardOf(countIn(draws.slice(0, 30), number)));
-  for (let number = 1; number <= 49; number++) pools[classifications[number]].push(number);
   try {
+    const count = Number(document.getElementById("randomGroupCount").value);
+    if (![2, 3, 4].includes(count)) throw new Error("請選擇2、3或4組");
+    const allowed = parseGroupRanges(document.getElementById("randomGroupRanges").value);
+    const base = Math.floor(allowed.length / count);
+    const remainder = allowed.length % count;
+    const sizes = Array.from({ length: count }, (_, index) => base + (index >= count - remainder ? 1 : 0));
+    const pools = { "冷": [], "正常": [], "熱": [] };
+    const classifications = Array.from({ length: 50 }, (_, number) => standardOf(countIn(draws.slice(0, 30), number)));
+    allowed.forEach(number => pools[classifications[number]].push(number));
     generatedNumberGroups = splitNumberGroups(pools, sizes);
     document.getElementById("randomGroupOutput").innerHTML = generatedNumberGroups.map((group, index) => {
       const totals = Object.keys(pools).map(category => `${category} ${group.filter(number => classifications[number] === category).length}`).join(" / ");
@@ -615,7 +640,7 @@ function generateRandomGroups() {
       }).join(" ");
       return `<section class="border-bottom pb-3 mb-3"><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><h2 class="h6 mb-0">第${index + 1}組（${group.length}個）</h2><button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyRandomGroup(${index})">複製第${index + 1}組</button></div><div class="small text-secondary mb-2">${totals}</div><div class="d-flex flex-wrap gap-1 mb-2">${numbers}</div><label class="visually-hidden" for="randomGroupText${index}">第${index + 1}組逗號分隔號碼</label><textarea id="randomGroupText${index}" class="form-control form-control-sm" rows="2" readonly>${group.join(",")}</textarea></section>`;
     }).join("");
-    status.textContent = `已生成${count}組，49個號碼各用一次；每組均含冷、正常、熱碼。`;
+    status.textContent = `已生成${count}組（${sizes.join(" / ")}），範圍內${allowed.length}個號碼各用一次；每組均含冷、正常、熱碼。`;
   } catch (error) {
     status.textContent = error.message;
   }

@@ -46,13 +46,14 @@ Two-number and three-number combinations in the latest 30 draws, including the s
 
 ### 隨機分組
 
-Load at least 30 draws, then choose **2組（24、25）**, **3組（16、16、17）**, or **4組（12、12、12、13）** and click **隨機生成**.
+Load at least 30 draws, then choose **2組**, **3組**, or **4組** and click **隨機生成**. With the full 1–49 pool, sizes are 24/25, 16/16/17, or 12/12/12/13 respectively.
 
-- Every number from 1 to 49 appears exactly once across the groups, with no duplicates within or between groups.
+- Leave **號碼範圍** blank for 1–49, or enter a shared pool such as `{1-20,31-40}` (30 numbers). Braces are optional; individual numbers and overlapping ranges are accepted, with duplicates removed. Numbers outside the ranges are omitted.
+- Every allowed number appears exactly once across the groups, with no duplicates within or between groups. Group sizes differ by at most one: 30 numbers produce 15/15 for two groups or 10/10/10 for three groups.
 - Each group contains cold, normal, and hot numbers using the latest 30 draws, including special numbers: 0–3 cold, 4–5 normal, and 6+ hot. Category counts are spread as evenly as group capacity allows.
 - Generation stops with an explanation if any category has fewer numbers than the chosen number of groups. The category requirements are not silently relaxed.
 - Each group shows its size, category counts, and colour-coded numbers in ascending order. Tap or click a number for the same statistics popover, including its trend score, recent counts, activity, and verdict. Viewing statistics does not change the generated groups.
 - **複製第N組** copies only that group's numbers, separated by commas, without a heading. A read-only text field also contains the comma-separated list; if automatic copying fails, it is selected for manual copying.
-- Generate again to reshuffle. Changing the group count or loading new results clears the generated lists and any open number popover.
+- Generate again to reshuffle. Changing the group count, editing the ranges, or loading new results clears the generated lists and any open number popover. Invalid ranges or a pool too small to meet the category requirements produce an error rather than partial groups.
 
 Random grouping is a way to organise the numbers, not a prediction of future draws.
