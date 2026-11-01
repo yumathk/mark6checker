@@ -7,6 +7,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
 <style>
 .numbtn { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0 2px; }
+.monthly-watch-toggle { width: 2rem; height: 2rem; font-weight: 700; }
 .picked, .numbtn.copy-picked { outline: 2px solid #ffc107; background: #ffe082; color: #212529; }
 body.copy-selecting #heatTable { user-select: none; }
 #copySelectBtn[aria-pressed="true"] { background: #ffc107; color: #212529; border-color: #ffc107; }
@@ -43,6 +44,14 @@ tr.dim td { color: #adb5bd; }
 td.outside { background-color: #343a40 !important; color: #adb5bd; }
 .up { color: #75b798 !important; font-weight: 700; }
 .down { color: #ea868f !important; font-weight: 700; }
+.monthly-chart-wrap { position: relative; height: 340px; min-width: 0; }
+#monthlyTable th, #monthlyTable td { white-space: nowrap; }
+#monthlyTable tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--bs-body-bg); }
+#monthlyTable tbody tr { cursor: pointer; }
+#monthlyTable tr.monthly-highlight > * { background-color: #3a3114; box-shadow: inset 0 2px #ffc107, inset 0 -2px #ffc107; }
+#monthlyTable tr.monthly-highlight > :first-child { border-left: 2px solid #ffc107; }
+#monthlyTable tr.monthly-highlight > :last-child { border-right: 2px solid #ffc107; }
+#monthlyTable td.monthly-pattern { white-space: normal; min-width: 10rem; max-width: 16rem; }
 @media (max-width: 576px) {
   .table { font-size: 0.75rem; }
   .table th, .table td { padding: 0.2rem; white-space: nowrap; }
@@ -68,6 +77,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
         <li class="nav-item"><button type="button" class="nav-link" data-section="windows" onclick="showSection('windows')">區間 × 5 期窗口</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="draws" onclick="showSection('draws')">每期區間分佈</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="history" onclick="showSection('history')">所有歷史結果</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="monthly" onclick="showSection('monthly')">每月號碼走勢</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="randomGroups" onclick="showSection('randomGroups')">隨機分組</button></li>
       </ul>
@@ -173,6 +183,26 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
     </div>
   </section>
 
+  <section id="monthly" class="d-none" data-panel="monthly">
+    <h1 class="h5">每月號碼走勢（含特別號）</h1>
+    <div class="d-flex flex-wrap align-items-end gap-3 mb-2">
+      <div>
+        <label for="monthlyProjectionDraws" class="form-label small mb-1">預計下月期數</label>
+        <input id="monthlyProjectionDraws" class="form-control form-control-sm" style="max-width: 9rem" type="number" min="1" max="1000" step="1" inputmode="numeric" placeholder="自動" onchange="renderMonthly()">
+      </div>
+      <button id="monthlyWatchlistCopy" type="button" class="btn btn-sm btn-outline-light" onclick="copyMonthlyWatchlist()" disabled>Copy watchlist</button>
+      <button id="monthlyWatchlistClear" type="button" class="btn btn-sm btn-outline-secondary" onclick="clearMonthlyWatchlist()" disabled>Clear watchlist</button>
+      <span id="monthlyWatchlistCount" class="small text-secondary">0個號碼</span>
+    </div>
+    <div id="monthlyWatchlistNumbers" class="d-flex flex-wrap gap-2 mb-2" aria-label="Watchlist"></div>
+    <input id="monthlyWatchlistText" class="form-control form-control-sm font-monospace mb-2" style="max-width: 28rem" type="text" readonly aria-label="Watchlist 逗號分隔號碼">
+    <div id="monthlyWatchlistStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+    <div id="monthlyStatus" class="small text-secondary mb-2" role="status" aria-live="polite">尚未載入結果</div>
+    <div class="table-responsive">
+      <table id="monthlyTable" class="table table-sm table-bordered align-middle text-center mb-0" aria-label="每月號碼次數"></table>
+    </div>
+  </section>
+
   <section id="pairs" class="d-none" data-panel="pairs">
     <h1 class="h5">號碼組合（最新30期，含特別號）</h1>
     <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
@@ -244,7 +274,29 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
   </section>
 </main>
 
+<div class="modal fade" id="monthlyChartModal" tabindex="-1" aria-labelledby="monthlyChartTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+          <h2 class="modal-title h5" id="monthlyChartTitle">每月號碼走勢</h2>
+          <button id="monthlyWatchlistToggle" type="button" class="btn btn-sm btn-outline-warning" onclick="toggleMonthlyWatchlist()" aria-pressed="false" disabled>Add to watchlist</button>
+        </div>
+        <button type="button" class="btn-close align-self-start ms-2" data-bs-dismiss="modal" aria-label="關閉"></button>
+      </div>
+      <div class="modal-body">
+        <div id="monthlyChartStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+        <div class="monthly-chart-wrap">
+          <canvas id="monthlyChart" role="img" aria-label="每月號碼次數折線圖"></canvas>
+        </div>
+        <div id="monthlyReferenceDetails" class="small mt-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
 <script>
 const WINDOWS = [
   { label: "1–5", start: 0, end: 5, weight: 6 },
@@ -274,11 +326,27 @@ let pairPage = 1;
 let numberPopover = null;
 let intervalCache = [];
 let generatedNumberGroups = [];
+let monthlySummary = [];
+let monthlyEstimate = null;
+let monthlyChart = null;
+let monthlyChartNumber = null;
+let monthlyHighlighted = null;
+const monthlyWatchlist = new Set();
+const MONTHLY_WATCHLIST_KEY = "mark6checker.monthlyWatchlist";
+let monthlyWatchlistCopying = false;
 
 const pairOptions = Array.from({ length: 49 }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`).join("");
 document.getElementById("pairNumber").insertAdjacentHTML("beforeend", pairOptions);
 document.getElementById("pairPartner").insertAdjacentHTML("beforeend", pairOptions);
 document.getElementById("pairThird").insertAdjacentHTML("beforeend", pairOptions);
+document.getElementById("monthlyChartModal").addEventListener("shown.bs.modal", renderMonthlyChart);
+document.getElementById("monthlyChartModal").addEventListener("hidden.bs.modal", () => {
+  if (monthlyChart) monthlyChart.destroy();
+  monthlyChart = null;
+  monthlyChartNumber = null;
+  syncMonthlyWatchlistButton();
+});
+restoreMonthlyWatchlist();
 
 function ballsOf(result) {
   return [...result.numbers, result.special];
@@ -449,6 +517,7 @@ document.getElementById("trend").addEventListener("click", event => {
 }, true);
 function showSection(id) {
   closeNumberPopover();
+  closeMonthlyChart();
   document.querySelectorAll("[data-panel]").forEach(panel => {
     panel.classList.toggle("d-none", panel.dataset.panel !== id);
   });
@@ -536,6 +605,7 @@ function loadJsonFile(input) {
 
 function render() {
   intervalCache = [];
+  renderMonthly();
   if (!draws.length) return;
   const rows = Array.from({ length: 49 }, (_, index) => numberRow(index + 1))
     .map(row => ({ ...row, standard: standardOf(row.c30) }))
@@ -547,6 +617,437 @@ function render() {
   renderHistory();
   renderPairs();
   applyCopySelection();
+}
+
+function summarizeMonthly(data) {
+  const months = new Map();
+  data.forEach((result, index) => {
+    if (!result || !/^\d{4}-\d{2}-\d{2}$/.test(result.date) || !Array.isArray(result.numbers) || result.numbers.length !== 6) {
+      throw new Error(`第${index + 1}筆需要有效日期、6個正選及特別號`);
+    }
+    const date = new Date(`${result.date}T00:00:00Z`);
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== result.date) {
+      throw new Error(`第${index + 1}筆日期無效`);
+    }
+    const balls = ballsOf(result);
+    if (balls.some(number => !Number.isInteger(number) || number < 1 || number > 49) || new Set(balls).size !== 7) {
+      throw new Error(`第${index + 1}筆號碼必須為1至49且不重複`);
+    }
+    const key = result.date.slice(0, 7);
+    const month = months.get(key) || { month: key, draws: 0, counts: Array(50).fill(0) };
+    month.draws++;
+    balls.forEach(number => month.counts[number]++);
+    months.set(key, month);
+  });
+  return [...months.values()].sort((first, second) => first.month.localeCompare(second.month));
+}
+
+function projectMonthly(months, plannedDraws = null) {
+  if (!months.length) return null;
+  const latest = months[months.length - 1].month;
+  const date = new Date(`${latest}-01T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() - 2);
+  const start = date.toISOString().slice(0, 7);
+  const recent = months.filter(month => month.month >= start && month.month <= latest);
+  const sourceDraws = recent.reduce((sum, month) => sum + month.draws, 0);
+  const draws = plannedDraws === null ? Math.max(1, Math.round(sourceDraws / recent.length)) : plannedDraws;
+  if (!Number.isInteger(draws) || draws < 1 || draws > 1000) throw new Error("預計下月期數必須是1至1000的整數");
+  date.setUTCMonth(date.getUTCMonth() + 3);
+  return {
+    month: date.toISOString().slice(0, 7),
+    draws,
+    start,
+    end: latest,
+    sourceDraws,
+    counts: Array.from({ length: 50 }, (_, number) => recent.reduce((sum, month) => sum + month.counts[number], 0) / sourceDraws * draws)
+  };
+}
+
+function monthlyMonthIndex(month) {
+  return Number(month.month.slice(0, 4)) * 12 + Number(month.month.slice(5, 7));
+}
+
+function monthlyLevel(month, number) {
+  return month.counts[number] === 0 ? 0 : Math.max(1, Math.round(month.counts[number] / month.draws * 12));
+}
+
+function patternMonthly(months, number, plannedDraws = null) {
+  const result = { pattern: null, matches: [], estimate: null, rises: 0 };
+  const serial = monthlyMonthIndex;
+  const level = month => monthlyLevel(month, number);
+  if (months.length < 2) return result;
+  const recent = months.slice(-2);
+  if (serial(recent[1]) !== serial(recent[0]) + 1) return result;
+  result.pattern = recent.map(level);
+  for (let index = 0; index + 2 < months.length; index++) {
+    const first = months[index], second = months[index + 1], next = months[index + 2];
+    if (serial(second) !== serial(first) + 1 || serial(next) !== serial(second) + 1) continue;
+    if (level(first) !== result.pattern[0] || level(second) !== result.pattern[1]) continue;
+    result.matches.push({ start: first.month, end: second.month, next: next.month, count: next.counts[number], draws: next.draws });
+    if (next.counts[number] / next.draws > second.counts[number] / second.draws) result.rises++;
+  }
+  if (result.matches.length && plannedDraws !== null) {
+    const counts = result.matches.reduce((sum, match) => sum + match.count, 0);
+    const draws = result.matches.reduce((sum, match) => sum + match.draws, 0);
+    result.estimate = counts / draws * plannedDraws;
+  }
+  return result;
+}
+
+function monthlyPatternText(pattern) {
+  if (!pattern.pattern) return "近2月資料不足";
+  const label = `${pattern.pattern.join("→")}；${pattern.matches.length}例`;
+  if (!pattern.matches.length) return `${label}；無相同模式`;
+  const estimate = pattern.estimate === null ? "" : `；參考${pattern.estimate.toFixed(1)}次`;
+  return `${label}${estimate}；其後上升${pattern.rises}/${pattern.matches.length}例${pattern.matches.length < 3 ? "；資料不足" : ""}`;
+}
+
+function monthlyReferences(months, number, plannedDraws = null) {
+  const level = { current: null, matches: [], estimate: null };
+  const move = { current: null, matches: [], estimate: null };
+  const shape = { current: null, matches: [], estimate: null };
+  if (!months.length) return { level, move, shape };
+  const rate = month => month.counts[number] / month.draws;
+  const direction = (first, second) => Math.abs(rate(second) - rate(first)) < 1e-12 ? 0 : Math.sign(rate(second) - rate(first));
+  const consecutive = (first, second) => monthlyMonthIndex(second) === monthlyMonthIndex(first) + 1;
+  const recent = months.slice(-3);
+  level.current = String(months[months.length - 1].counts[number]);
+  const steps = recent.length === 3 && consecutive(recent[0], recent[1]) && consecutive(recent[1], recent[2]) ? [direction(recent[0], recent[1]), direction(recent[1], recent[2])] : null;
+  const labels = { "-1": "下降", "0": "持平", "1": "上升" };
+  const pair = months.slice(-2);
+  const moveStep = pair.length === 2 && consecutive(pair[0], pair[1]) ? direction(pair[0], pair[1]) : null;
+  if (moveStep !== null) move.current = labels[moveStep];
+  if (steps) shape.current = steps.map(step => labels[step]).join("→");
+  const outcome = month => ({ month: month.month, count: month.counts[number], draws: month.draws });
+  for (let index = 0; index + 1 < months.length; index++) {
+    const anchor = months[index], next = months[index + 1], after = months[index + 2];
+    if (!consecutive(anchor, next)) continue;
+    const match = {
+      source: [outcome(anchor)],
+      next: outcome(next),
+      after: after && consecutive(next, after) ? outcome(after) : null,
+      direction: direction(anchor, next)
+    };
+    if (anchor.counts[number] === Number(level.current)) level.matches.push(match);
+    if (moveStep !== null && index >= 1 && consecutive(months[index - 1], anchor) && direction(months[index - 1], anchor) === moveStep) {
+      move.matches.push({ ...match, source: months.slice(index - 1, index + 1).map(outcome) });
+    }
+    if (steps && index >= 2 && consecutive(months[index - 2], months[index - 1]) && consecutive(months[index - 1], anchor) && direction(months[index - 2], months[index - 1]) === steps[0] && direction(months[index - 1], anchor) === steps[1]) {
+      shape.matches.push({ ...match, source: months.slice(index - 2, index + 1).map(outcome) });
+    }
+  }
+  for (const reference of [level, move, shape]) {
+    if (reference.matches.length && plannedDraws !== null) {
+      reference.estimate = reference.matches.reduce((sum, match) => sum + match.next.count, 0) / reference.matches.reduce((sum, match) => sum + match.next.draws, 0) * plannedDraws;
+    }
+  }
+  return { level, move, shape };
+}
+
+function monthlyReferenceText(label, reference) {
+  if (reference.current === null) return `${label}：資料不足`;
+  const count = reference.matches.length;
+  const prefix = `${label} ${reference.current}；${count}例`;
+  if (!count) return `${prefix}；無可比樣本`;
+  const up = reference.matches.filter(match => match.direction > 0).length;
+  const down = reference.matches.filter(match => match.direction < 0).length;
+  return `${prefix}；後續上升${up}／持平${count - up - down}／下降${down}${reference.estimate === null ? "" : `；參考${reference.estimate.toFixed(1)}次`}${count < 3 ? "；資料不足" : ""}`;
+}
+
+function monthlyDirectionSummary(months, number, pattern, references) {
+  const byMonth = new Map(months.map(month => [month.month, month]));
+  const exact = pattern.matches.map(match => {
+    const previous = byMonth.get(match.end);
+    const change = match.count / match.draws - previous.counts[number] / previous.draws;
+    return Math.abs(change) < 1e-12 ? 0 : Math.sign(change);
+  });
+  const candidates = [
+    { source: "近2月模式", directions: exact },
+    { source: "近3月形態", directions: references.shape.matches.map(match => match.direction) },
+    { source: "近2月方向", directions: references.move.matches.map(match => match.direction) },
+    { source: "同次數", directions: references.level.matches.map(match => match.direction) }
+  ];
+  const sentences = ["其後有可能會下降", "其後有可能維持平穩", "其後有可能會上升"];
+  for (const candidate of candidates) {
+    const counts = [-1, 0, 1].map(direction => candidate.directions.filter(value => value === direction).length);
+    const winner = counts.findIndex(count => count > candidate.directions.length / 2);
+    if (winner >= 0) return { text: sentences[winner], className: ["down", "", "up"][winner], source: candidate.source, samples: candidate.directions.length };
+  }
+  const any = candidates.some(candidate => candidate.directions.length);
+  return { text: any ? "歷史參考不一致，方向未明" : "資料不足，暫無明顯方向", className: "", source: "", samples: 0 };
+}
+
+function monthlyReferenceHtml(label, reference) {
+  const describe = outcome => `${outcome.month}（${outcome.count}次/${outcome.draws}期）`;
+  return `<div class="mt-2"><strong>${monthlyReferenceText(label, reference)}</strong>${reference.matches.map(match => `<div class="text-secondary">${match.source.map(describe).join("→")}；其後 ${describe(match.next)}${match.after ? `→${describe(match.after)}` : "；再下一月未載入"}</div>`).join("")}</div>`;
+}
+
+function highlightMonthlyRow(number) {
+  monthlyHighlighted = number;
+  document.querySelectorAll("#monthlyTable tbody tr[data-monthly-number]").forEach(row => {
+    const active = Number(row.dataset.monthlyNumber) === monthlyHighlighted;
+    row.classList.toggle("monthly-highlight", active);
+    row.setAttribute("aria-selected", String(active));
+  });
+}
+
+function toggleMonthlyRow(number) {
+  highlightMonthlyRow(monthlyHighlighted === number ? null : number);
+}
+
+function monthlyRecentTrend(months, number) {
+  const recent = months.slice(-2);
+  if (recent.length < 2 || monthlyMonthIndex(recent[1]) !== monthlyMonthIndex(recent[0]) + 1) {
+    return { text: "近2月資料不足", className: "text-secondary", detail: "缺少連續兩個月的結果" };
+  }
+  const [previous, latest] = recent;
+  const change = latest.counts[number] / latest.draws - previous.counts[number] / previous.draws;
+  const previousLow = monthlyLevel(previous, number) <= 1;
+  const latestLow = monthlyLevel(latest, number) <= 1;
+  const detail = `${previous.month}：${previous.counts[number]}次/${previous.draws}期 → ${latest.month}：${latest.counts[number]}次/${latest.draws}期（同次數視為持平，其餘按每期出現率比較）`;
+  if (previous.counts[number] === 0 && latest.counts[number] === 0) {
+    return { text: "近2月未出", className: "text-info", detail };
+  }
+  if (previous.counts[number] === latest.counts[number]) {
+    return { text: previousLow && latestLow ? "低位徘徊" : "近期持平", className: previousLow && latestLow ? "text-info" : "text-secondary", detail };
+  }
+  if (change > 1e-12) {
+    return { text: previousLow ? (latestLow ? "低位回升" : "由低位回升") : "近期上升", className: "up", detail };
+  }
+  if (previousLow && latestLow) return { text: "低位徘徊", className: "text-info", detail };
+  if (change < -1e-12) return { text: latestLow ? "下降至低位" : "近期下降", className: "down", detail };
+  return { text: "近期持平", className: "text-secondary", detail };
+}
+
+function renderMonthly() {
+  const table = document.getElementById("monthlyTable");
+  const status = document.getElementById("monthlyStatus");
+  monthlySummary = [];
+  monthlyEstimate = null;
+  table.innerHTML = "";
+  try {
+    monthlySummary = summarizeMonthly(full);
+    if (monthlySummary.length) {
+      const input = document.getElementById("monthlyProjectionDraws");
+      const planned = input.value.trim();
+      try {
+        monthlyEstimate = projectMonthly(monthlySummary, planned ? Number(planned) : null);
+      } catch (error) {
+        status.textContent = error.message;
+      }
+      const projectionHead = monthlyEstimate ? `${monthlyEstimate.month} 外推<small class="d-block text-secondary">假設${monthlyEstimate.draws}期</small>` : "下月外推";
+      const head = `<thead><tr><th scope="col">號碼</th>${monthlySummary.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計</th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col">走勢參考</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
+      const body = Array.from({ length: 49 }, (_, index) => {
+        const number = index + 1;
+        const total = monthlySummary.reduce((sum, month) => sum + month.counts[number], 0);
+        const estimate = monthlyEstimate ? monthlyEstimate.counts[number].toFixed(1) : "—";
+        const pattern = patternMonthly(monthlySummary, number, monthlyEstimate ? monthlyEstimate.draws : null);
+        const references = monthlyReferences(monthlySummary, number, monthlyEstimate ? monthlyEstimate.draws : null);
+        const summary = monthlyDirectionSummary(monthlySummary, number, pattern, references);
+        const recent = monthlyRecentTrend(monthlySummary, number);
+        const saved = monthlyWatchlist.has(number);
+        const watchLabel = `${saved ? "移除" : "加入"}號碼 ${number} ${saved ? "從" : "至"} watchlist`;
+        return `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${monthlySummary.map(month => `<td>${month.counts[number]}</td>`).join("")}<td>${total}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern ${summary.className}">${summary.text}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
+      }).join("");
+      const foot = `<tfoot><tr><th scope="row">合計</th>${monthlySummary.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
+      table.innerHTML = head + `<tbody>${body}</tbody>` + foot;
+    }
+    if (!full.length) {
+      monthlyHighlighted = null;
+      status.textContent = "尚未載入結果";
+    }
+    else if (monthlyEstimate) {
+      status.textContent = `全部 ${full.length} 期（含特別號）；外推依據：${monthlyEstimate.start}至${monthlyEstimate.end}已載入的${monthlyEstimate.sourceDraws}期，假設下月${monthlyEstimate.draws}期。歷史外推，非下期機率；未完整月份或缺漏資料會影響估計。`;
+    }
+  } catch (error) {
+    status.textContent = `無法計算每月次數：${error.message}`;
+  }
+  renderMonthlyChart();
+}
+
+function monthlyChartData(months, numbers) {
+  if (!months.length) return { labels: [], datasets: [] };
+  const byMonth = new Map(months.map(month => [month.month, month]));
+  const keys = [...byMonth.keys()].sort();
+  const cursor = new Date(`${keys[0]}-01T00:00:00Z`);
+  const labels = [];
+  while (cursor.toISOString().slice(0, 7) <= keys[keys.length - 1]) {
+    labels.push(cursor.toISOString().slice(0, 7));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  const colors = ["#75b798", "#ffb86b"];
+  return {
+    labels,
+    datasets: [...new Set(numbers)].filter(number => number >= 1 && number <= 49).map((number, index) => ({
+      label: `號碼 ${number}`,
+      data: labels.map(key => byMonth.has(key) ? byMonth.get(key).counts[number] : null),
+      borderColor: colors[index],
+      backgroundColor: colors[index],
+      borderWidth: 2,
+      pointRadius: 3,
+      pointHitRadius: 12,
+      spanGaps: false
+    }))
+  };
+}
+
+function sortedMonthlyWatchlist() {
+  return [...monthlyWatchlist].sort((first, second) => first - second);
+}
+
+function syncMonthlyWatchlistButton() {
+  const button = document.getElementById("monthlyWatchlistToggle");
+  const saved = monthlyWatchlist.has(monthlyChartNumber);
+  button.disabled = monthlyChartNumber === null;
+  button.textContent = saved ? "Remove from watchlist" : "Add to watchlist";
+  button.setAttribute("aria-pressed", String(saved));
+}
+
+function renderMonthlyWatchlist() {
+  const numbers = sortedMonthlyWatchlist();
+  document.getElementById("monthlyWatchlistNumbers").innerHTML = numbers.map(number => `<button type="button" class="btn btn-sm btn-outline-warning" onclick="removeMonthlyWatchNumber(${number})" title="移除號碼 ${number}" aria-label="從 watchlist 移除號碼 ${number}">${number} <span aria-hidden="true">×</span></button>`).join("");
+  document.getElementById("monthlyWatchlistText").value = numbers.join(",");
+  document.getElementById("monthlyWatchlistCount").textContent = `${numbers.length}個號碼`;
+  document.getElementById("monthlyWatchlistCopy").disabled = !numbers.length || monthlyWatchlistCopying;
+  document.getElementById("monthlyWatchlistClear").disabled = !numbers.length;
+  document.querySelectorAll("#monthlyTable .monthly-watch-toggle").forEach(button => {
+    const number = Number(button.dataset.watchNumber);
+    const saved = monthlyWatchlist.has(number);
+    const label = `${saved ? "移除" : "加入"}號碼 ${number} ${saved ? "從" : "至"} watchlist`;
+    button.textContent = saved ? "−" : "+";
+    button.classList.toggle("text-warning", saved);
+    button.setAttribute("aria-pressed", String(saved));
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  });
+  syncMonthlyWatchlistButton();
+}
+
+function restoreMonthlyWatchlist() {
+  try {
+    const data = JSON.parse(localStorage.getItem(MONTHLY_WATCHLIST_KEY) || "[]");
+    if (!Array.isArray(data)) throw new Error("Invalid watchlist");
+    data.filter(number => Number.isInteger(number) && number >= 1 && number <= 49).forEach(number => monthlyWatchlist.add(number));
+  } catch (error) {
+    document.getElementById("monthlyWatchlistStatus").textContent = "無法讀取儲存的 watchlist；仍可暫存及複製號碼。";
+  }
+  renderMonthlyWatchlist();
+}
+
+function saveMonthlyWatchlist() {
+  const status = document.getElementById("monthlyWatchlistStatus");
+  try {
+    localStorage.setItem(MONTHLY_WATCHLIST_KEY, JSON.stringify(sortedMonthlyWatchlist()));
+    status.textContent = "";
+  } catch (error) {
+    status.textContent = "瀏覽器無法儲存 watchlist；目前仍可複製，重新整理後可能不會保留。";
+  }
+  renderMonthlyWatchlist();
+}
+
+function toggleMonthlyWatchlist(number = monthlyChartNumber) {
+  if (!Number.isInteger(number) || number < 1 || number > 49) return;
+  if (monthlyWatchlist.has(number)) monthlyWatchlist.delete(number);
+  else monthlyWatchlist.add(number);
+  saveMonthlyWatchlist();
+}
+
+function removeMonthlyWatchNumber(number) {
+  monthlyWatchlist.delete(number);
+  saveMonthlyWatchlist();
+}
+
+function clearMonthlyWatchlist() {
+  monthlyWatchlist.clear();
+  saveMonthlyWatchlist();
+}
+
+async function copyMonthlyWatchlist() {
+  const text = sortedMonthlyWatchlist().join(",");
+  if (!text || monthlyWatchlistCopying) return;
+  const status = document.getElementById("monthlyWatchlistStatus");
+  monthlyWatchlistCopying = true;
+  renderMonthlyWatchlist();
+  try {
+    await writeClipboardText(text);
+    status.textContent = `已複製：${text}`;
+  } catch (error) {
+    const field = document.getElementById("monthlyWatchlistText");
+    field.value = text;
+    field.focus();
+    field.select();
+    status.textContent = "無法自動複製，已選取 watchlist 號碼，可手動複製。";
+  } finally {
+    monthlyWatchlistCopying = false;
+    document.getElementById("monthlyWatchlistCopy").disabled = !monthlyWatchlist.size;
+  }
+}
+
+function openMonthlyChart(number) {
+  if (!Number.isInteger(number) || number < 1 || number > 49 || !monthlySummary.length) return;
+  closeNumberPopover();
+  monthlyChartNumber = number;
+  syncMonthlyWatchlistButton();
+  document.getElementById("monthlyChartTitle").textContent = `號碼 ${number} 每月走勢（含特別號）`;
+  document.getElementById("monthlyChartStatus").textContent = "";
+  const modal = document.getElementById("monthlyChartModal");
+  if (modal.classList.contains("show")) renderMonthlyChart();
+  else bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
+function closeMonthlyChart() {
+  bootstrap.Modal.getInstance(document.getElementById("monthlyChartModal"))?.hide();
+  if (monthlyChart) monthlyChart.destroy();
+  monthlyChart = null;
+  monthlyChartNumber = null;
+  syncMonthlyWatchlistButton();
+}
+
+function renderMonthlyChart() {
+  if (!monthlySummary.length) {
+    closeMonthlyChart();
+    return;
+  }
+  if (!monthlyChartNumber || !document.getElementById("monthlyChartModal").classList.contains("show")) return;
+  const plannedDraws = monthlyEstimate ? monthlyEstimate.draws : null;
+  const pattern = patternMonthly(monthlySummary, monthlyChartNumber, plannedDraws);
+  const references = monthlyReferences(monthlySummary, monthlyChartNumber, plannedDraws);
+  const summary = monthlyDirectionSummary(monthlySummary, monthlyChartNumber, pattern, references);
+  const examples = pattern.matches.map(match => `<div class="text-secondary">${match.start}至${match.end}後，${match.next}：${match.count}次/${match.draws}期</div>`).join("");
+  document.getElementById("monthlyReferenceDetails").innerHTML = `<strong class="${summary.className}">${summary.text}</strong><details class="mt-2"><summary>查看歷史依據</summary>${summary.source ? `<div class="mt-2">摘要依據：${summary.source}（${summary.samples}例）${summary.samples < 3 ? "，樣本少，僅供參考" : ""}</div>` : ""}<div class="mt-2"><strong>近2月模式：${monthlyPatternText(pattern)}</strong>${examples}</div>` + monthlyReferenceHtml("同次數", references.level) + monthlyReferenceHtml("近2月方向", references.move) + monthlyReferenceHtml("近3月形態", references.shape) + "</details>";
+  if (typeof Chart === "undefined") {
+    document.getElementById("monthlyChartStatus").textContent = "Chart.js 無法載入；每月次數仍可查看表格。";
+    return;
+  }
+  const data = monthlyChartData(monthlySummary, [monthlyChartNumber]);
+  document.getElementById("monthlyChartStatus").textContent = (monthlyEstimate ? `${monthlyEstimate.month} 歷史外推：${monthlyEstimate.counts[monthlyChartNumber].toFixed(1)}次（假設${monthlyEstimate.draws}期），非下期機率。` : "") + "僅歷史參考，不代表下月更可能出現。";
+  document.getElementById("monthlyChart").setAttribute("aria-label", `${data.datasets.map(dataset => dataset.label).join("、")}每月次數折線圖；完整次數見表格`);
+  if (monthlyChart) {
+    monthlyChart.data = data;
+    monthlyChart.resize();
+    monthlyChart.update();
+    return;
+  }
+  monthlyChart = new Chart(document.getElementById("monthlyChart"), {
+    type: "line",
+    data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: "#dee2e6" } },
+        tooltip: { callbacks: { afterBody: items => {
+          const month = monthlySummary.find(row => row.month === items[0]?.label);
+          return month ? `${month.draws}期（含特別號）` : "";
+        } } }
+      },
+      scales: {
+        x: { ticks: { color: "#adb5bd", maxRotation: 45 }, grid: { color: "#343a40" } },
+        y: { beginAtZero: true, ticks: { color: "#adb5bd", stepSize: 1 }, title: { display: true, text: "次數", color: "#dee2e6" }, grid: { color: "#343a40" } }
+      }
+    }
+  });
 }
 
 function clearRandomGroups() {
@@ -951,7 +1452,7 @@ function renderHistory() {
   } else {
     status.textContent = `顯示全部 ${full.length} 期。點擊號碼可在所有期數中高亮，並查看統計。`;
   }
-  const head = `<thead><tr><th>#</th><th>Date</th><th>Number 1</th><th>Number 2</th><th>Number 3</th><th>Number 4</th><th>Number 5</th><th>Number 6</th><th>Special</th></tr></thead>`;
+  const head = `<thead><tr><th>#</th><th>Date</th><th>號碼 1</th><th>號碼 2</th><th>號碼 3</th><th>號碼 4</th><th>號碼 5</th><th>號碼 6</th><th>Special</th></tr></thead>`;
   const body = shown.map(({ result, index }) => {
     const balls = ballsOf(result);
     const rowClass = selected !== null && balls.includes(selected) ? "selected-row" : "";
