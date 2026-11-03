@@ -44,7 +44,12 @@ tr.dim td { color: #adb5bd; }
 td.outside { background-color: #343a40 !important; color: #adb5bd; }
 .up { color: #75b798 !important; font-weight: 700; }
 .down { color: #ea868f !important; font-weight: 700; }
+main.container-fluid { min-width: 0; overflow-x: clip; }
+.table-responsive { max-width: 100%; contain: paint; }
 .monthly-chart-wrap { position: relative; height: 340px; min-width: 0; }
+#monthlyChartModal .modal-header > div, #monthlyChartModal .modal-body { min-width: 0; }
+#monthlyChartModal .modal-title, #monthlyReferenceDetails { overflow-wrap: anywhere; }
+#monthlyChartModal .btn-close, #monthlyWatchlistToggle, #monthly .btn { flex-shrink: 0; }
 #monthlyTable th, #monthlyTable td { white-space: nowrap; }
 #monthlyTable tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--bs-body-bg); }
 #monthlyTable tbody tr { cursor: pointer; }
@@ -53,7 +58,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 #monthlyTable tr.monthly-highlight > :last-child { border-right: 2px solid #ffc107; }
 #monthlyTable tr.monthly-watched > * { background-color: #454545; }
 #monthlyTable td.monthly-pattern { white-space: normal; min-width: 10rem; max-width: 16rem; }
-@media (max-width: 576px) {
+@media (max-width: 991.98px) {
   .table { font-size: 0.75rem; }
   .table th, .table td { padding: 0.2rem; white-space: nowrap; }
   .trend-table-scroll { max-height: 70vh; overflow: auto; }
@@ -62,6 +67,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
   .due-list { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 0.25rem; }
   .due-chip { flex: 0 0 auto; width: 11.5rem; }
   .history-table-scroll { max-height: none; overflow-x: auto; overflow-y: visible; }
+  #monthlyChartModal .monthly-chart-wrap { height: clamp(220px, 45vh, 340px); height: clamp(220px, 45dvh, 340px); }
 }
 </style>
 </head>
@@ -276,7 +282,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 </main>
 
 <div class="modal fade" id="monthlyChartModal" tabindex="-1" aria-labelledby="monthlyChartTitle" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-lg-down">
     <div class="modal-content">
       <div class="modal-header">
         <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
