@@ -2,7 +2,7 @@
 
 Static pages for checking Hong Kong Mark Six results. Draw history lives in [results.json](results.json): newest first, each row is a date, six main numbers, and one special number. Open [estimation.html](estimation.html) directly, or host the folder on GitHub Pages. No build step is required.
 
-Load results with **從網址讀取**, a local `.json` file, or pasted JSON. The file and pasted text stay in the browser. The special number is counted together with the six main numbers unless a section says otherwise. Counts, gaps, and highlights are descriptions of past draws, not a next-draw probability.
+The estimation page automatically fetches the default GitHub results URL on startup. Loading controls start collapsed; open **JSON 載入設定** to reload with **從網址讀取**, change the URL, choose a local `.json` file, or paste JSON. Load errors appear inside these settings. The file and pasted text stay in the browser. The special number is counted together with the six main numbers unless a section says otherwise. Counts, gaps, and highlights are descriptions of past draws, not a next-draw probability.
 
 ## Estimation page
 

@@ -88,10 +88,10 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 <main class="container-fluid py-3">
   <div class="p-2">
     <a data-bs-toggle="collapse" href="#getJSONGrid" role="button" aria-expanded="false" aria-controls="getJSONGrid">
-      Hide the grid
+      JSON 載入設定
     </a>
   </div>
-  <div class="collapse show" id="getJSONGrid">
+  <div class="collapse" id="getJSONGrid">
     <div class="card card-body">
       <div class="input-group mb-2">
         <input id="jsonUrl" class="form-control" type="text" value="https://raw.githubusercontent.com/yumathk/mark6checker/refs/heads/main/results.json" aria-label="JSON 網址">
@@ -1576,6 +1576,8 @@ function renderBands() {
   }).join("");
   document.getElementById("bandTable").innerHTML = head + `<tbody>${body}</tbody>`;
 }
+
+loadJson();
 </script>
 </body>
 </html>
