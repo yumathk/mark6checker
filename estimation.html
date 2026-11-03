@@ -51,6 +51,7 @@ td.outside { background-color: #343a40 !important; color: #adb5bd; }
 #monthlyTable tr.monthly-highlight > * { background-color: #3a3114; box-shadow: inset 0 2px #ffc107, inset 0 -2px #ffc107; }
 #monthlyTable tr.monthly-highlight > :first-child { border-left: 2px solid #ffc107; }
 #monthlyTable tr.monthly-highlight > :last-child { border-right: 2px solid #ffc107; }
+#monthlyTable tr.monthly-watched > * { background-color: #454545; }
 #monthlyTable td.monthly-pattern { white-space: normal; min-width: 10rem; max-width: 16rem; }
 @media (max-width: 576px) {
   .table { font-size: 0.75rem; }
@@ -328,6 +329,7 @@ let intervalCache = [];
 let generatedNumberGroups = [];
 let monthlySummary = [];
 let monthlyEstimate = null;
+let monthlyExtras = null;
 let monthlyChart = null;
 let monthlyChartNumber = null;
 let monthlyHighlighted = null;
@@ -819,15 +821,71 @@ function monthlyRecentTrend(months, number) {
   return { text: "近期持平", className: "text-secondary", detail };
 }
 
+function summarizeMonthlyExtras(data) {
+  const periodDraws = [0, 0, 0];
+  const periodCounts = Array.from({ length: 50 }, () => [0, 0, 0]);
+  const totals = Array(50).fill(0);
+  const companions = Array.from({ length: 50 }, () => Array(50).fill(0));
+  data.forEach(result => {
+    const day = Number(result.date.slice(8, 10));
+    const period = day <= 10 ? 0 : day <= 20 ? 1 : 2;
+    const balls = ballsOf(result);
+    periodDraws[period]++;
+    balls.forEach(number => {
+      periodCounts[number][period]++;
+      totals[number]++;
+      balls.forEach(partner => {
+        if (partner !== number) companions[number][partner]++;
+      });
+    });
+  });
+  return { periodDraws, periodCounts, totals, companions };
+}
+
+function monthlyTimingSummary(stats, number) {
+  const labels = ["月頭", "月中", "月尾"];
+  const ranges = ["1–10", "11–20", "21–31"];
+  const counts = stats.periodCounts[number];
+  const total = stats.totals[number];
+  const detail = labels.map((label, index) => {
+    const draws = stats.periodDraws[index];
+    const rate = draws ? `${(counts[index] / draws * 100).toFixed(1)}%` : "無資料";
+    return `${label}（${ranges[index]}日）：${counts[index]}次/${draws}期，該時段出現率${rate}`;
+  }).join("；");
+  if (!total) return { text: "尚未出現", detail };
+  const highest = Math.max(...counts);
+  const winners = labels.filter((_, index) => counts[index] === highest);
+  const text = winners.length > 1 ? `${winners.join("／")}並列（各${highest}次）` : `${winners[0]}${highest > total / 2 ? "為主" : "較多"}（${highest}/${total}次）`;
+  return { text, detail };
+}
+
+function monthlyCompanions(stats, number) {
+  return Array.from({ length: 49 }, (_, index) => ({ number: index + 1, count: stats.companions[number][index + 1] }))
+    .filter(partner => partner.number !== number && partner.count > 0)
+    .sort((first, second) => second.count - first.count || first.number - second.number);
+}
+
+function monthlyCompanionHtml(stats, number, limit = 3) {
+  const partners = monthlyCompanions(stats, number).slice(0, limit);
+  if (!partners.length) return "尚無同出紀錄";
+  return partners.map(partner => {
+    const total = stats.totals[number];
+    const title = `號碼 ${number} 出現的${total}期中，與${partner.number}同出${partner.count}次（${(partner.count / total * 100).toFixed(1)}%）；僅已載入歷史`;
+    return `<span class="d-inline-block me-2 text-white"><button type="button" class="numbtn" title="${title}" aria-label="查看號碼 ${partner.number} 每月走勢，與${number}同出${partner.count}次" onclick="event.stopPropagation();highlightMonthlyRow(${partner.number});openMonthlyChart(${partner.number})">${partner.number}</button><small>（${partner.count}次）</small></span>`;
+  }).join("");
+}
+
 function renderMonthly() {
   const table = document.getElementById("monthlyTable");
   const status = document.getElementById("monthlyStatus");
   monthlySummary = [];
   monthlyEstimate = null;
+  monthlyExtras = null;
   table.innerHTML = "";
   try {
     monthlySummary = summarizeMonthly(full);
     if (monthlySummary.length) {
+      monthlyExtras = summarizeMonthlyExtras(full);
       const input = document.getElementById("monthlyProjectionDraws");
       const planned = input.value.trim();
       try {
@@ -836,7 +894,7 @@ function renderMonthly() {
         status.textContent = error.message;
       }
       const projectionHead = monthlyEstimate ? `${monthlyEstimate.month} 外推<small class="d-block text-secondary">假設${monthlyEstimate.draws}期</small>` : "下月外推";
-      const head = `<thead><tr><th scope="col">號碼</th>${monthlySummary.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計</th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col">走勢參考</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
+      const head = `<thead><tr><th scope="col">號碼</th>${monthlySummary.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計</th><th scope="col">偏多時段<small class="d-block text-secondary">全部歷史，月尾含31日</small></th><th scope="col" title="按同出次數排序，同次數按號碼排序；非未來機率">常同出（前3）<small class="d-block text-secondary">全部歷史，含特別號</small></th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col">走勢參考</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
       const body = Array.from({ length: 49 }, (_, index) => {
         const number = index + 1;
         const total = monthlySummary.reduce((sum, month) => sum + month.counts[number], 0);
@@ -845,11 +903,12 @@ function renderMonthly() {
         const references = monthlyReferences(monthlySummary, number, monthlyEstimate ? monthlyEstimate.draws : null);
         const summary = monthlyDirectionSummary(monthlySummary, number, pattern, references);
         const recent = monthlyRecentTrend(monthlySummary, number);
+        const timing = monthlyTimingSummary(monthlyExtras, number);
         const saved = monthlyWatchlist.has(number);
         const watchLabel = `${saved ? "移除" : "加入"}號碼 ${number} ${saved ? "從" : "至"} watchlist`;
-        return `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${monthlySummary.map(month => `<td>${month.counts[number]}</td>`).join("")}<td>${total}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern ${summary.className}">${summary.text}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
+        return `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}${saved ? " monthly-watched" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${monthlySummary.map(month => `<td>${month.counts[number]}</td>`).join("")}<td class="monthly-total${total >= 18 ? " up" : ""}">${total}</td><td class="monthly-timing" title="${timing.detail}">${timing.text}</td><td class="monthly-companions">${monthlyCompanionHtml(monthlyExtras, number)}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern ${summary.className}">${summary.text}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
       }).join("");
-      const foot = `<tfoot><tr><th scope="row">合計</th>${monthlySummary.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
+      const foot = `<tfoot><tr><th scope="row">合計</th>${monthlySummary.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
       table.innerHTML = head + `<tbody>${body}</tbody>` + foot;
     }
     if (!full.length) {
@@ -910,6 +969,9 @@ function renderMonthlyWatchlist() {
   document.getElementById("monthlyWatchlistCount").textContent = `${numbers.length}個號碼`;
   document.getElementById("monthlyWatchlistCopy").disabled = !numbers.length || monthlyWatchlistCopying;
   document.getElementById("monthlyWatchlistClear").disabled = !numbers.length;
+  document.querySelectorAll("#monthlyTable tbody tr[data-monthly-number]").forEach(row => {
+    row.classList.toggle("monthly-watched", monthlyWatchlist.has(Number(row.dataset.monthlyNumber)));
+  });
   document.querySelectorAll("#monthlyTable .monthly-watch-toggle").forEach(button => {
     const number = Number(button.dataset.watchNumber);
     const saved = monthlyWatchlist.has(number);
@@ -1014,7 +1076,9 @@ function renderMonthlyChart() {
   const references = monthlyReferences(monthlySummary, monthlyChartNumber, plannedDraws);
   const summary = monthlyDirectionSummary(monthlySummary, monthlyChartNumber, pattern, references);
   const examples = pattern.matches.map(match => `<div class="text-secondary">${match.start}至${match.end}後，${match.next}：${match.count}次/${match.draws}期</div>`).join("");
-  document.getElementById("monthlyReferenceDetails").innerHTML = `<strong class="${summary.className}">${summary.text}</strong><details class="mt-2"><summary>查看歷史依據</summary>${summary.source ? `<div class="mt-2">摘要依據：${summary.source}（${summary.samples}例）${summary.samples < 3 ? "，樣本少，僅供參考" : ""}</div>` : ""}<div class="mt-2"><strong>近2月模式：${monthlyPatternText(pattern)}</strong>${examples}</div>` + monthlyReferenceHtml("同次數", references.level) + monthlyReferenceHtml("近2月方向", references.move) + monthlyReferenceHtml("近3月形態", references.shape) + "</details>";
+  const timing = monthlyTimingSummary(monthlyExtras, monthlyChartNumber);
+  const historyDetails = `<div class="mt-2"><strong>月內時段：${timing.text}</strong><div class="text-secondary">${timing.detail}</div></div><div class="mt-2"><strong>同出紀錄（全部歷史，含特別號）</strong><div class="d-flex flex-wrap gap-1 mt-1">${monthlyCompanionHtml(monthlyExtras, monthlyChartNumber, 48)}</div><div class="text-secondary">按同出次數排序，同次數按號碼排序。只代表已載入紀錄，不代表以後必定同出。</div></div>`;
+  document.getElementById("monthlyReferenceDetails").innerHTML = `<strong class="${summary.className}">${summary.text}</strong><details class="mt-2"><summary>查看歷史依據</summary>${historyDetails}${summary.source ? `<div class="mt-2">摘要依據：${summary.source}（${summary.samples}例）${summary.samples < 3 ? "，樣本少，僅供參考" : ""}</div>` : ""}<div class="mt-2"><strong>近2月模式：${monthlyPatternText(pattern)}</strong>${examples}</div>` + monthlyReferenceHtml("同次數", references.level) + monthlyReferenceHtml("近2月方向", references.move) + monthlyReferenceHtml("近3月形態", references.shape) + "</details>";
   if (typeof Chart === "undefined") {
     document.getElementById("monthlyChartStatus").textContent = "Chart.js 無法載入；每月次數仍可查看表格。";
     return;
