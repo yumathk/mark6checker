@@ -197,6 +197,15 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
     <h1 class="h5">每月號碼走勢（含特別號）</h1>
     <div class="d-flex flex-wrap align-items-end gap-3 mb-2">
       <div>
+        <label for="monthlyDisplayMonths" class="form-label small mb-1">月份明細</label>
+        <select id="monthlyDisplayMonths" class="form-select form-select-sm" onchange="renderMonthly()">
+          <option value="0" selected>收起</option>
+          <option value="6">最近6個月</option>
+          <option value="12">最近12個月</option>
+          <option value="all">全部月份</option>
+        </select>
+      </div>
+      <div>
         <label for="monthlyProjectionDraws" class="form-label small mb-1">預計下月期數</label>
         <input id="monthlyProjectionDraws" class="form-control form-control-sm" style="max-width: 9rem" type="number" min="1" max="1000" step="1" inputmode="numeric" placeholder="自動" onchange="renderMonthly()">
       </div>
@@ -605,18 +614,55 @@ function parseResults(text) {
   const data = JSON.parse(String(text).replace(/^\uFEFF/, "").trim());
   return Array.isArray(data) ? data : [data];
 }
-function applyResults(data, source) {
+function validateResult(result, index) {
+  if (!result || typeof result.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(result.date) || !Array.isArray(result.numbers) || result.numbers.length !== 6) {
+    throw new Error(`第${index + 1}筆需要 YYYY-MM-DD 日期、6個正選及特別號`);
+  }
+  const date = new Date(`${result.date}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== result.date) {
+    throw new Error(`第${index + 1}筆日期無效`);
+  }
+  const balls = ballsOf(result);
+  if (balls.some(number => !Number.isInteger(number) || number < 1 || number > 49) || new Set(balls).size !== 7) {
+    throw new Error(`第${index + 1}筆號碼必須為1至49且不重複`);
+  }
+}
+
+function normalizeResults(data) {
   if (!Array.isArray(data)) throw new Error("JSON 不是陣列");
-  const bad = data.findIndex(row => !row || typeof row.date !== "string" || !Array.isArray(row.numbers) || !Number.isInteger(row.special));
-  if (bad >= 0) throw new Error(`第 ${bad + 1} 筆格式不對，需要 date、numbers、special`);
-  full = data;
+  const dates = new Map();
+  let duplicates = 0;
+  data.forEach((result, index) => {
+    validateResult(result, index);
+    const signature = JSON.stringify([[...result.numbers].sort((first, second) => first - second), result.special]);
+    const previous = dates.get(result.date);
+    if (previous) {
+      if (previous.signature !== signature) throw new Error(`第${index + 1}筆與第${previous.index + 1}筆在 ${result.date} 的結果不一致`);
+      duplicates++;
+    } else {
+      dates.set(result.date, { signature, index, result: { ...result, numbers: [...result.numbers] } });
+    }
+  });
+  const results = [...dates.values()].map(entry => entry.result).sort((first, second) => second.date.localeCompare(first.date));
+  return { results, duplicates };
+}
+
+function applyResults(data, source) {
+  const normalized = normalizeResults(data);
+  full = normalized.results;
   draws = full.slice(0, 30);
   clearRandomGroups();
   const status = document.getElementById("status");
   status.textContent = `已讀 ${full.length} 期（${source}），估算用最新 ${draws.length} 期` +
-    (draws[0] ? `（${draws[0].date}）` : "");
+    (draws[0] ? `（${draws[0].date}）` : "") +
+    (normalized.duplicates ? `；已略過${normalized.duplicates}筆相同日期及結果的重複紀錄` : "");
   render();
 }
+function showLoadError(message) {
+  document.getElementById("status").textContent = message;
+  bootstrap.Collapse.getOrCreateInstance(document.getElementById("getJSONGrid"), { toggle: false }).show();
+}
+
 async function loadJson() {
   const status = document.getElementById("status");
   status.textContent = "讀取中…";
@@ -625,7 +671,7 @@ async function loadJson() {
     if (!response.ok) throw new Error(response.status + " " + response.statusText);
     applyResults(await response.json(), "網址");
   } catch (error) {
-    status.textContent = "無法讀取 JSON：" + error + "。file:// 直接開頁時，瀏覽器可能擋住讀取網址。可改貼上 JSON 或選擇本機檔案。";
+    showLoadError("無法讀取 JSON：" + error + "。file:// 直接開頁時，瀏覽器可能擋住讀取網址。可改貼上 JSON 或選擇本機檔案。");
   }
 }
 function loadJsonText() {
@@ -635,7 +681,7 @@ function loadJsonText() {
     if (!text.trim()) throw new Error("請先貼上 JSON");
     applyResults(parseResults(text), "貼上");
   } catch (error) {
-    status.textContent = "無法解析貼上的 JSON：" + error;
+    showLoadError("無法解析貼上的 JSON：" + error);
   }
 }
 function loadJsonFile(input) {
@@ -648,11 +694,11 @@ function loadJsonFile(input) {
     try {
       applyResults(parseResults(reader.result), file.name);
     } catch (error) {
-      status.textContent = "無法解析本機檔案：" + error;
+      showLoadError("無法解析本機檔案：" + error);
     }
   };
   reader.onerror = () => {
-    status.textContent = "無法讀取本機檔案。";
+    showLoadError("無法讀取本機檔案。");
   };
   reader.readAsText(file);
 }
@@ -677,17 +723,8 @@ function render() {
 function summarizeMonthly(data) {
   const months = new Map();
   data.forEach((result, index) => {
-    if (!result || !/^\d{4}-\d{2}-\d{2}$/.test(result.date) || !Array.isArray(result.numbers) || result.numbers.length !== 6) {
-      throw new Error(`第${index + 1}筆需要有效日期、6個正選及特別號`);
-    }
-    const date = new Date(`${result.date}T00:00:00Z`);
-    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== result.date) {
-      throw new Error(`第${index + 1}筆日期無效`);
-    }
+    validateResult(result, index);
     const balls = ballsOf(result);
-    if (balls.some(number => !Number.isInteger(number) || number < 1 || number > 49) || new Set(balls).size !== 7) {
-      throw new Error(`第${index + 1}筆號碼必須為1至49且不重複`);
-    }
     const key = result.date.slice(0, 7);
     const month = months.get(key) || { month: key, draws: 0, counts: Array(50).fill(0) };
     month.draws++;
@@ -903,7 +940,7 @@ function backtestForecast(horizon) {
   const baselineAtLeast = 1 - Math.pow(1 - FORECAST_BASE_RATE, horizon);
   const firstAnchor = FORECAST.warmup - 1;
   const lastAnchor = chrono.length - horizon - 1;
-  const anchors = lastAnchor - firstAnchor + 1;
+  const anchors = Math.floor((lastAnchor - firstAnchor) / horizon) + 1;
   if (anchors < 10) return null;
   const buckets = [
     { label: "低於40%", min: 0, max: 0.4 },
@@ -914,7 +951,7 @@ function backtestForecast(horizon) {
   let modelError = 0;
   let baseError = 0;
   let samples = 0;
-  for (let anchor = firstAnchor; anchor <= lastAnchor; anchor++) {
+  for (let anchor = firstAnchor; anchor <= lastAnchor; anchor += horizon) {
     const future = new Set();
     for (let index = anchor + 1; index <= anchor + horizon; index++) ballsOf(chrono[index]).forEach(number => future.add(number));
     const rows = [];
@@ -936,13 +973,11 @@ function backtestForecast(horizon) {
   }
   const topAverage = topHits / anchors;
   const baselineTop = FORECAST.topK * baselineAtLeast;
-  const se = Math.sqrt(FORECAST.topK * baselineAtLeast * (1 - baselineAtLeast) / anchors);
   return {
     horizon,
     anchors,
     topAverage,
     baselineTop,
-    sigma: se ? (topAverage - baselineTop) / se : 0,
     modelBrier: samples ? modelError / samples : null,
     baseBrier: samples ? baseError / samples : null,
     buckets: buckets.filter(bucket => bucket.count).map(bucket => ({
@@ -968,8 +1003,7 @@ function persistenceRates() {
       });
     });
     const rate = pairs ? both / pairs : null;
-    const se = pairs ? Math.sqrt(FORECAST_BASE_RATE * (1 - FORECAST_BASE_RATE) / pairs) : null;
-    return { lag, pairs, rate, z: rate === null || !se ? null : (rate - FORECAST_BASE_RATE) / se };
+    return { lag, pairs, rate };
   });
 }
 
@@ -979,7 +1013,7 @@ function renderMonthlyBacktest() {
   const horizon = monthlyHorizon();
   const summary = document.querySelector("#monthlyBacktestDetails > summary");
   if (summary) summary.textContent = `未來${horizon}期回測與校準`;
-  const minimum = FORECAST.warmup + horizon + 10;
+  const minimum = FORECAST.warmup + horizon * 10;
   if (full.length < minimum) {
     box.innerHTML = `<div class="text-secondary">未來${horizon}期回測需要至少${minimum}期已載入結果；目前${full.length}期。</div>`;
     return;
@@ -992,16 +1026,13 @@ function renderMonthlyBacktest() {
     }
     const difference = result.topAverage - result.baselineTop;
     const buckets = result.buckets.map(bucket => `${bucket.label}（${bucket.count}個）預測${(bucket.predicted * 100).toFixed(1)}%／實際${(bucket.observed * 100).toFixed(1)}%`).join("；");
-    const persistence = persistenceRates().map(item => `lag${item.lag} ${(item.rate * 100).toFixed(1)}%（z ${item.z.toFixed(2)}）`).join("，");
-    const conclusion = Math.abs(result.sigma) < 2
-      ? { text: `未見可分辨優勢：前${FORECAST.topK}名與基準的差距在抽樣誤差內（${Math.abs(result.sigma).toFixed(1)}σ < 2σ）。`, className: "text-secondary" }
-      : { text: `模型${result.sigma > 0 ? "高" : "低"}於基準${Math.abs(result.sigma).toFixed(1)}σ；這仍是歷史回測，不是下期機率。`, className: result.sigma > 0 ? "up" : "down" };
+    const persistence = persistenceRates().map(item => `lag${item.lag} ${(item.rate * 100).toFixed(1)}%（${item.pairs}組）`).join("，");
     box.innerHTML = `<div class="text-secondary">模型：最近${FORECAST.window}期出現率（z 上限 ±${FORECAST.zCap}）與今次間距相對平均間距加權（權重${FORECAST.weightRecent}／${FORECAST.weightGap}），每期估計限制在${(FORECAST.minRate * 100).toFixed(0)}–${(FORECAST.maxRate * 100).toFixed(0)}%。只用回測起點之前的資料。</div>`
-      + `<div>未來${result.horizon}期回測：暖機${FORECAST.warmup}期，${result.anchors}個起點，每次取估計最高的${FORECAST.topK}個號碼。</div>`
-      + `<div>前${FORECAST.topK}名命中 <strong>${result.topAverage.toFixed(2)}</strong>／基準${result.baselineTop.toFixed(2)}（差${difference >= 0 ? "+" : ""}${difference.toFixed(2)}，${Math.abs(result.sigma).toFixed(1)}σ）；Brier <strong>${result.modelBrier.toFixed(3)}</strong>／基準${result.baseBrier.toFixed(3)}。</div>`
+      + `<div>未來${result.horizon}期回測：暖機${FORECAST.warmup}期，${result.anchors}個起點，測試期段互不重疊；每次取估計最高的${FORECAST.topK}個號碼。</div>`
+      + `<div>前${FORECAST.topK}名命中 <strong>${result.topAverage.toFixed(2)}</strong>／基準${result.baselineTop.toFixed(2)}（差${difference >= 0 ? "+" : ""}${difference.toFixed(2)}）；Brier <strong>${result.modelBrier.toFixed(3)}</strong>／基準${result.baseBrier.toFixed(3)}。</div>`
       + `<div class="text-secondary">校準：${buckets}。</div>`
       + `<div class="text-secondary">連續性：${persistence}；每期基準${(FORECAST_BASE_RATE * 100).toFixed(2)}%。</div>`
-      + `<div class="${conclusion.className}">${conclusion.text}</div>`;
+      + `<div class="text-secondary">僅歷史描述比較，未作顯著性推論；訓練資料仍共享、號碼亦相關，差距不構成優勢證明或下期機率。</div>`;
   } catch (error) {
     box.textContent = `無法回測：${error.message}`;
   }
@@ -1103,6 +1134,13 @@ function monthlyCompanionHtml(stats, number, limit = 3) {
   }).join("");
 }
 
+function monthlyVisibleMonths() {
+  const value = document.getElementById("monthlyDisplayMonths").value;
+  if (value === "all") return monthlySummary;
+  const limit = Number(value);
+  return Number.isInteger(limit) && limit > 0 ? monthlySummary.slice(-limit) : [];
+}
+
 function renderMonthly() {
   const status = document.getElementById("monthlyStatus");
   const horizon = monthlyHorizon();
@@ -1126,7 +1164,8 @@ function renderMonthly() {
       }
       const projectionHead = monthlyEstimate ? `${monthlyEstimate.month} 外推<small class="d-block text-secondary">假設${monthlyEstimate.draws}期</small>` : "下月外推";
       const forecastHead = `未來${horizon}期<small class="d-block text-secondary">預估次數（基準）／至少出一次</small>`;
-      monthlyTableHead = `<thead><tr><th scope="col">號碼</th>${monthlySummary.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計</th><th scope="col">偏多時段<small class="d-block text-secondary">全部歷史，月尾含31日</small></th><th scope="col" title="按同出次數排序，同次數按號碼排序；非未來機率">常同出（前3）<small class="d-block text-secondary">全部歷史，含特別號</small></th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col" title="以最近30期出現率與今次間距作小幅外推；括號內是隨機基準。偏多／偏少表示最近30期出現率的90%區間不含基準，49個號碼一同比較時約5個屬隨機波動，不代表下期較易出現">${forecastHead}</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
+      const visibleMonths = monthlyVisibleMonths();
+      monthlyTableHead = `<thead><tr><th scope="col">號碼</th>${visibleMonths.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計<small class="d-block text-secondary">全部歷史</small></th><th scope="col">偏多時段<small class="d-block text-secondary">全部歷史，月尾含31日</small></th><th scope="col" title="按同出次數排序，同次數按號碼排序；非未來機率">常同出（前3）<small class="d-block text-secondary">全部歷史，含特別號</small></th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col" title="以最近30期出現率與今次間距作小幅外推；括號內是隨機基準。偏多／偏少表示最近30期出現率的90%區間不含基準，49個號碼一同比較時約5個屬隨機波動，不代表下期較易出現">${forecastHead}</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
       monthlyRows = Array.from({ length: 49 }, (_, index) => {
         const number = index + 1;
         const total = monthlySummary.reduce((sum, month) => sum + month.counts[number], 0);
@@ -1136,10 +1175,10 @@ function renderMonthly() {
         const timing = monthlyTimingSummary(monthlyExtras, number);
         const saved = monthlyWatchlist.has(number);
         const watchLabel = `${saved ? "移除" : "加入"}號碼 ${number} ${saved ? "從" : "至"} watchlist`;
-        const html = `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}${saved ? " monthly-watched" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${monthlySummary.map(month => `<td>${month.counts[number]}</td>`).join("")}<td class="monthly-total${total >= 18 ? " up" : ""}">${total}</td><td class="monthly-timing" title="${timing.detail}">${timing.text}</td><td class="monthly-companions">${monthlyCompanionHtml(monthlyExtras, number)}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern monthly-forecast">${monthlyForecastCell(forecast)}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
+        const html = `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}${saved ? " monthly-watched" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${visibleMonths.map(month => `<td>${month.counts[number]}</td>`).join("")}<td class="monthly-total${total >= 18 ? " up" : ""}">${total}</td><td class="monthly-timing" title="${timing.detail}">${timing.text}</td><td class="monthly-companions">${monthlyCompanionHtml(monthlyExtras, number)}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern monthly-forecast">${monthlyForecastCell(forecast)}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
         return { number, forecast, html };
       });
-      monthlyTableFoot = `<tfoot><tr><th scope="row">合計</th>${monthlySummary.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
+      monthlyTableFoot = `<tfoot><tr><th scope="row">合計</th>${visibleMonths.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
       renderMonthlyTable();
     }
     if (!full.length) {
@@ -1207,7 +1246,7 @@ function renderMonthlyTable() {
   const highest = monthlyRows.reduce((best, row) => (row.forecast ? Math.max(best, row.forecast.expected) : best), 0);
   const body = rows.length
     ? rows.map(row => row.html).join("")
-    : `<tr><td colspan="${monthlySummary.length + 8}" class="text-secondary">沒有號碼達到 ${threshold.toFixed(2)} 次（未來${horizon}期最高 ${highest.toFixed(2)} 次，基準 ${baseline.toFixed(2)} 次）。</td></tr>`;
+    : `<tr><td colspan="${monthlyVisibleMonths().length + 8}" class="text-secondary">沒有號碼達到 ${threshold.toFixed(2)} 次（未來${horizon}期最高 ${highest.toFixed(2)} 次，基準 ${baseline.toFixed(2)} 次）。</td></tr>`;
   table.innerHTML = monthlyTableHead + `<tbody>${body}</tbody>` + monthlyTableFoot;
   if (bulk) {
     const active = threshold !== null;
@@ -1221,7 +1260,7 @@ function renderMonthlyTable() {
   if (threshold === null) {
     status.textContent = `顯示全部 ${monthlyRows.length} 個號碼；可輸入門檻篩選未來${horizon}期預估次數（基準 ${baseline.toFixed(2)} 次）。`;
   } else if (rows.length) {
-    status.textContent = `顯示 ${rows.length}／${monthlyRows.length} 個號碼（門檻 ${threshold.toFixed(2)} 次；未來${horizon}期基準 ${baseline.toFixed(2)} 次）。篩選只挑出模型預估較高的號碼，回測顯示與基準無可分辨優勢。`;
+    status.textContent = `顯示 ${rows.length}／${monthlyRows.length} 個號碼（門檻 ${threshold.toFixed(2)} 次；未來${horizon}期基準 ${baseline.toFixed(2)} 次）。篩選只挑出模型預估較高的號碼，不代表優於隨機基準。`;
   } else {
     status.textContent = `沒有號碼達到 ${threshold.toFixed(2)} 次（未來${horizon}期最高 ${highest.toFixed(2)} 次、基準 ${baseline.toFixed(2)} 次）。可調低門檻，或按「基準」填入基準值。`;
   }
