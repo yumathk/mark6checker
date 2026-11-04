@@ -58,6 +58,9 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
 #monthlyTable tr.monthly-highlight > :last-child { border-right: 2px solid #ffc107; }
 #monthlyTable tr.monthly-watched > * { background-color: #454545; }
 #monthlyTable td.monthly-pattern { white-space: normal; min-width: 10rem; max-width: 16rem; }
+#monthlyTable td.monthly-forecast { min-width: 9rem; max-width: 14rem; }
+#monthlyBacktestDetails > summary { cursor: pointer; }
+#monthlyBacktest > div + div { margin-top: 0.2rem; }
 @media (max-width: 991.98px) {
   .table { font-size: 0.75rem; }
   .table th, .table td { padding: 0.2rem; white-space: nowrap; }
@@ -197,14 +200,36 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
         <label for="monthlyProjectionDraws" class="form-label small mb-1">預計下月期數</label>
         <input id="monthlyProjectionDraws" class="form-control form-control-sm" style="max-width: 9rem" type="number" min="1" max="1000" step="1" inputmode="numeric" placeholder="自動" onchange="renderMonthly()">
       </div>
+      <div>
+        <label for="monthlyHorizon" class="form-label small mb-1">短期預測期數</label>
+        <select id="monthlyHorizon" class="form-select form-select-sm" style="max-width: 9rem" onchange="renderMonthly()">
+          <option value="1">未來1期</option>
+          <option value="2">未來2期</option>
+          <option value="3">未來3期</option>
+          <option value="4" selected>未來4期</option>
+        </select>
+      </div>
+      <div>
+        <label for="monthlyFilterExpected" class="form-label small mb-1">未來<span id="monthlyFilterHorizonLabel">4</span>期預估 ≥（次）</label>
+        <div class="d-flex align-items-center gap-1">
+          <input id="monthlyFilterExpected" class="form-control form-control-sm" style="max-width: 6rem" type="number" min="0" step="0.01" inputmode="decimal" placeholder="全部" oninput="renderMonthlyTable()">
+          <button type="button" id="monthlyFilterBaseline" class="btn btn-sm btn-outline-secondary" onclick="setMonthlyFilterToBaseline()" title="填入未來N期的隨機基準（7/49 × N）">基準</button>
+        </div>
+      </div>
+      <button id="monthlyBulkAdd" type="button" class="btn btn-sm btn-outline-warning" onclick="addFilteredToWatchlist()" disabled>加入篩選至 watchlist</button>
       <button id="monthlyWatchlistCopy" type="button" class="btn btn-sm btn-outline-light" onclick="copyMonthlyWatchlist()" disabled>Copy watchlist</button>
       <button id="monthlyWatchlistClear" type="button" class="btn btn-sm btn-outline-secondary" onclick="clearMonthlyWatchlist()" disabled>Clear watchlist</button>
       <span id="monthlyWatchlistCount" class="small text-secondary">0個號碼</span>
     </div>
+    <div id="monthlyFilterStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
     <div id="monthlyWatchlistNumbers" class="d-flex flex-wrap gap-2 mb-2" aria-label="Watchlist"></div>
     <input id="monthlyWatchlistText" class="form-control form-control-sm font-monospace mb-2" style="max-width: 28rem" type="text" readonly aria-label="Watchlist 逗號分隔號碼">
     <div id="monthlyWatchlistStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
     <div id="monthlyStatus" class="small text-secondary mb-2" role="status" aria-live="polite">尚未載入結果</div>
+    <details id="monthlyBacktestDetails" class="mb-2">
+      <summary class="small">未來期數回測與校準</summary>
+      <div id="monthlyBacktest" class="small mt-2" aria-live="polite"></div>
+    </details>
     <div class="table-responsive">
       <table id="monthlyTable" class="table table-sm table-bordered align-middle text-center mb-0" aria-label="每月號碼次數"></table>
     </div>
@@ -320,6 +345,23 @@ const BANDS = [
   { label: "31–40", min: 31, max: 40 },
   { label: "41–49", min: 41, max: 49 }
 ];
+const MONTHLY_LEVEL_CUT = 0.7;
+const MONTHLY_LEVEL_LABELS = ["低", "中", "高"];
+const FORECAST_BASE_RATE = 7 / 49;
+const FORECAST = {
+  horizons: [1, 2, 3, 4],
+  defaultHorizon: 4,
+  window: 30,
+  zCap: 2,
+  gapCap: 1.5,
+  weightRecent: 0.25,
+  weightGap: 0.1,
+  minRate: 0.08,
+  maxRate: 0.26,
+  z90: 1.645,
+  warmup: 40,
+  topK: 10
+};
 
 let full = [];
 let draws = [];
@@ -335,7 +377,11 @@ let intervalCache = [];
 let generatedNumberGroups = [];
 let monthlySummary = [];
 let monthlyEstimate = null;
+let forecastData = null;
 let monthlyExtras = null;
+let monthlyRows = [];
+let monthlyTableHead = "";
+let monthlyTableFoot = "";
 let monthlyChart = null;
 let monthlyChartNumber = null;
 let monthlyHighlighted = null;
@@ -613,6 +659,7 @@ function loadJsonFile(input) {
 
 function render() {
   intervalCache = [];
+  forecastData = null;
   renderMonthly();
   if (!draws.length) return;
   const rows = Array.from({ length: 49 }, (_, index) => numberRow(index + 1))
@@ -676,7 +723,15 @@ function monthlyMonthIndex(month) {
 }
 
 function monthlyLevel(month, number) {
-  return month.counts[number] === 0 ? 0 : Math.max(1, Math.round(month.counts[number] / month.draws * 12));
+  const expected = month.draws * FORECAST_BASE_RATE;
+  if (!(expected > 0)) return 0;
+  const z = (month.counts[number] - expected) / Math.sqrt(expected);
+  if (z <= -MONTHLY_LEVEL_CUT) return 0;
+  return z >= MONTHLY_LEVEL_CUT ? 2 : 1;
+}
+
+function monthlyLow(month, number) {
+  return month.draws > 0 && month.counts[number] / month.draws <= FORECAST_BASE_RATE;
 }
 
 function patternMonthly(months, number, plannedDraws = null) {
@@ -704,10 +759,10 @@ function patternMonthly(months, number, plannedDraws = null) {
 
 function monthlyPatternText(pattern) {
   if (!pattern.pattern) return "近2月資料不足";
-  const label = `${pattern.pattern.join("→")}；${pattern.matches.length}例`;
+  const label = `${pattern.pattern.map(level => MONTHLY_LEVEL_LABELS[level]).join("→")}；${pattern.matches.length}例`;
   if (!pattern.matches.length) return `${label}；無相同模式`;
   const estimate = pattern.estimate === null ? "" : `；參考${pattern.estimate.toFixed(1)}次`;
-  return `${label}${estimate}；其後上升${pattern.rises}/${pattern.matches.length}例${pattern.matches.length < 3 ? "；資料不足" : ""}`;
+  return `${label}${estimate}；其後上升${pattern.rises}/${pattern.matches.length}例（基準約一半）${pattern.matches.length < 3 ? "；樣本少" : ""}`;
 }
 
 function monthlyReferences(months, number, plannedDraws = null) {
@@ -759,30 +814,197 @@ function monthlyReferenceText(label, reference) {
   if (!count) return `${prefix}；無可比樣本`;
   const up = reference.matches.filter(match => match.direction > 0).length;
   const down = reference.matches.filter(match => match.direction < 0).length;
-  return `${prefix}；後續上升${up}／持平${count - up - down}／下降${down}${reference.estimate === null ? "" : `；參考${reference.estimate.toFixed(1)}次`}${count < 3 ? "；資料不足" : ""}`;
+  return `${prefix}；後續上升${up}／持平${count - up - down}／下降${down}（基準約升/降各半）${reference.estimate === null ? "" : `；參考${reference.estimate.toFixed(1)}次`}${count < 3 ? "；樣本少" : ""}`;
 }
 
-function monthlyDirectionSummary(months, number, pattern, references) {
-  const byMonth = new Map(months.map(month => [month.month, month]));
-  const exact = pattern.matches.map(match => {
-    const previous = byMonth.get(match.end);
-    const change = match.count / match.draws - previous.counts[number] / previous.draws;
-    return Math.abs(change) < 1e-12 ? 0 : Math.sign(change);
+function monthlyHorizon() {
+  const select = document.getElementById("monthlyHorizon");
+  const value = select ? Number(select.value) : FORECAST.defaultHorizon;
+  return FORECAST.horizons.includes(value) ? value : FORECAST.defaultHorizon;
+}
+
+function forecastDataset() {
+  if (forecastData) return forecastData;
+  const chrono = [...full].reverse();
+  const profiles = Array.from({ length: 50 }, (_, number) => ({ number, indices: [], gapPrefix: [0] }));
+  chrono.forEach((result, index) => {
+    ballsOf(result).forEach(number => profiles[number].indices.push(index));
   });
-  const candidates = [
-    { source: "近2月模式", directions: exact },
-    { source: "近3月形態", directions: references.shape.matches.map(match => match.direction) },
-    { source: "近2月方向", directions: references.move.matches.map(match => match.direction) },
-    { source: "同次數", directions: references.level.matches.map(match => match.direction) }
-  ];
-  const sentences = ["其後有可能會下降", "其後有可能維持平穩", "其後有可能會上升"];
-  for (const candidate of candidates) {
-    const counts = [-1, 0, 1].map(direction => candidate.directions.filter(value => value === direction).length);
-    const winner = counts.findIndex(count => count > candidate.directions.length / 2);
-    if (winner >= 0) return { text: sentences[winner], className: ["down", "", "up"][winner], source: candidate.source, samples: candidate.directions.length };
+  profiles.forEach(profile => {
+    for (let count = 1; count < profile.indices.length; count++) {
+      profile.gapPrefix.push(profile.gapPrefix[count - 1] + profile.indices[count] - profile.indices[count - 1]);
+    }
+  });
+  forecastData = { chrono, profiles };
+  return forecastData;
+}
+
+function countAtMost(values, limit) {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (values[middle] <= limit) low = middle + 1;
+    else high = middle;
   }
-  const any = candidates.some(candidate => candidate.directions.length);
-  return { text: any ? "歷史參考不一致，方向未明" : "資料不足，暫無明顯方向", className: "", source: "", samples: 0 };
+  return low;
+}
+
+function wilsonInterval(count, samples, z) {
+  if (!samples) return [0, 1];
+  const rate = count / samples;
+  const denominator = 1 + z * z / samples;
+  const centre = (rate + z * z / (2 * samples)) / denominator;
+  const margin = z * Math.sqrt(rate * (1 - rate) / samples + z * z / (4 * samples * samples)) / denominator;
+  return [Math.max(0, centre - margin), Math.min(1, centre + margin)];
+}
+
+function forecastStats(number, horizon, anchor = null) {
+  const { chrono, profiles } = forecastDataset();
+  if (!chrono.length) return null;
+  const latest = anchor === null ? chrono.length - 1 : anchor;
+  if (latest < 1) return null;
+  const profile = profiles[number];
+  const window = Math.min(FORECAST.window, latest + 1);
+  const from = latest - window + 1;
+  const hits = countAtMost(profile.indices, latest) - countAtMost(profile.indices, from - 1);
+  const seen = countAtMost(profile.indices, latest);
+  const lastHit = seen ? profile.indices[seen - 1] : null;
+  const gap = lastHit === null ? latest + 1 : latest - lastHit;
+  const averageGap = seen >= 2 ? profile.gapPrefix[seen - 1] / (seen - 1) : null;
+  const rate = hits / window;
+  const deviation = Math.sqrt(FORECAST_BASE_RATE * (1 - FORECAST_BASE_RATE) / window);
+  const rateZ = Math.max(-FORECAST.zCap, Math.min(FORECAST.zCap, (rate - FORECAST_BASE_RATE) / deviation));
+  const gapTilt = averageGap ? Math.max(-FORECAST.gapCap, Math.min(FORECAST.gapCap, gap / averageGap - 1)) : 0;
+  const estimate = Math.min(FORECAST.maxRate, Math.max(FORECAST.minRate,
+    FORECAST_BASE_RATE * Math.exp(FORECAST.weightRecent * rateZ + FORECAST.weightGap * gapTilt)));
+  const [low, high] = wilsonInterval(hits, window, FORECAST.z90);
+  const baselineExpected = FORECAST_BASE_RATE * horizon;
+  const baselineAtLeast = 1 - Math.pow(1 - FORECAST_BASE_RATE, horizon);
+  const atLeast = 1 - Math.pow(1 - estimate, horizon);
+  const verdict = high < FORECAST_BASE_RATE ? -1 : low > FORECAST_BASE_RATE ? 1 : 0;
+  const detail = `最近${window}期出現${hits}次（${(rate * 100).toFixed(1)}%，90%區間${(low * 100).toFixed(1)}–${(high * 100).toFixed(1)}%），每期基準${(FORECAST_BASE_RATE * 100).toFixed(2)}%。`
+    + (averageGap ? `今次間距${gap}期，已完成間距平均${averageGap.toFixed(1)}期。` : `今次間距${gap}期，沒有足夠的已完成間距。`)
+    + `模型把每期出現率小幅調整為${(estimate * 100).toFixed(1)}%，再外推${horizon}期；括號內是隨機基準，非下期機率。`
+    + `49個號碼一同比較時，約5個偏多／偏少標籤屬隨機波動。`;
+  return { number, window, hits, rate, estimate, expected: estimate * horizon, baselineExpected, atLeast, baselineAtLeast, low, high, gap, averageGap, verdict, detail };
+}
+
+function monthlyForecastCell(stats) {
+  if (!stats) return "—";
+  const verdicts = { "-1": ["偏少", "down"], "0": ["未見差異", "text-secondary"], "1": ["偏多", "up"] };
+  const [label, className] = verdicts[String(stats.verdict)];
+  return `<div>${stats.expected.toFixed(2)} 次 <small class="text-secondary">（${stats.baselineExpected.toFixed(2)}）</small></div>`
+    + `<div class="${className}" title="${stats.detail}">${Math.round(stats.atLeast * 100)}% <small class="text-secondary">（${Math.round(stats.baselineAtLeast * 100)}%）</small> · ${label}</div>`;
+}
+
+function backtestForecast(horizon) {
+  const { chrono } = forecastDataset();
+  const baselineAtLeast = 1 - Math.pow(1 - FORECAST_BASE_RATE, horizon);
+  const firstAnchor = FORECAST.warmup - 1;
+  const lastAnchor = chrono.length - horizon - 1;
+  const anchors = lastAnchor - firstAnchor + 1;
+  if (anchors < 10) return null;
+  const buckets = [
+    { label: "低於40%", min: 0, max: 0.4 },
+    { label: "40–55%", min: 0.4, max: 0.55 },
+    { label: "高於55%", min: 0.55, max: Infinity }
+  ].map(bucket => ({ ...bucket, predicted: 0, hits: 0, count: 0 }));
+  let topHits = 0;
+  let modelError = 0;
+  let baseError = 0;
+  let samples = 0;
+  for (let anchor = firstAnchor; anchor <= lastAnchor; anchor++) {
+    const future = new Set();
+    for (let index = anchor + 1; index <= anchor + horizon; index++) ballsOf(chrono[index]).forEach(number => future.add(number));
+    const rows = [];
+    for (let number = 1; number <= 49; number++) {
+      const stats = forecastStats(number, horizon, anchor);
+      if (!stats) continue;
+      const hit = future.has(number) ? 1 : 0;
+      rows.push({ number, atLeast: stats.atLeast, hit });
+      modelError += (stats.atLeast - hit) ** 2;
+      baseError += (baselineAtLeast - hit) ** 2;
+      const bucket = buckets.find(item => stats.atLeast >= item.min && stats.atLeast < item.max) || buckets[buckets.length - 1];
+      bucket.predicted += stats.atLeast;
+      bucket.hits += hit;
+      bucket.count++;
+      samples++;
+    }
+    rows.sort((first, second) => second.atLeast - first.atLeast || first.number - second.number);
+    topHits += rows.slice(0, FORECAST.topK).reduce((sum, row) => sum + row.hit, 0);
+  }
+  const topAverage = topHits / anchors;
+  const baselineTop = FORECAST.topK * baselineAtLeast;
+  const se = Math.sqrt(FORECAST.topK * baselineAtLeast * (1 - baselineAtLeast) / anchors);
+  return {
+    horizon,
+    anchors,
+    topAverage,
+    baselineTop,
+    sigma: se ? (topAverage - baselineTop) / se : 0,
+    modelBrier: samples ? modelError / samples : null,
+    baseBrier: samples ? baseError / samples : null,
+    buckets: buckets.filter(bucket => bucket.count).map(bucket => ({
+      label: bucket.label,
+      count: bucket.count,
+      predicted: bucket.predicted / bucket.count,
+      observed: bucket.hits / bucket.count
+    }))
+  };
+}
+
+function persistenceRates() {
+  const { chrono, profiles } = forecastDataset();
+  return FORECAST.horizons.map(lag => {
+    let pairs = 0;
+    let both = 0;
+    profiles.forEach(profile => {
+      profile.indices.forEach(index => {
+        const next = index + lag;
+        if (next >= chrono.length) return;
+        pairs++;
+        if (countAtMost(profile.indices, next) - countAtMost(profile.indices, next - 1)) both++;
+      });
+    });
+    const rate = pairs ? both / pairs : null;
+    const se = pairs ? Math.sqrt(FORECAST_BASE_RATE * (1 - FORECAST_BASE_RATE) / pairs) : null;
+    return { lag, pairs, rate, z: rate === null || !se ? null : (rate - FORECAST_BASE_RATE) / se };
+  });
+}
+
+function renderMonthlyBacktest() {
+  const box = document.getElementById("monthlyBacktest");
+  if (!box) return;
+  const horizon = monthlyHorizon();
+  const summary = document.querySelector("#monthlyBacktestDetails > summary");
+  if (summary) summary.textContent = `未來${horizon}期回測與校準`;
+  const minimum = FORECAST.warmup + horizon + 10;
+  if (full.length < minimum) {
+    box.innerHTML = `<div class="text-secondary">未來${horizon}期回測需要至少${minimum}期已載入結果；目前${full.length}期。</div>`;
+    return;
+  }
+  try {
+    const result = backtestForecast(horizon);
+    if (!result) {
+      box.innerHTML = `<div class="text-secondary">期數不足，未能回測。</div>`;
+      return;
+    }
+    const difference = result.topAverage - result.baselineTop;
+    const buckets = result.buckets.map(bucket => `${bucket.label}（${bucket.count}個）預測${(bucket.predicted * 100).toFixed(1)}%／實際${(bucket.observed * 100).toFixed(1)}%`).join("；");
+    const persistence = persistenceRates().map(item => `lag${item.lag} ${(item.rate * 100).toFixed(1)}%（z ${item.z.toFixed(2)}）`).join("，");
+    const conclusion = Math.abs(result.sigma) < 2
+      ? { text: `未見可分辨優勢：前${FORECAST.topK}名與基準的差距在抽樣誤差內（${Math.abs(result.sigma).toFixed(1)}σ < 2σ）。`, className: "text-secondary" }
+      : { text: `模型${result.sigma > 0 ? "高" : "低"}於基準${Math.abs(result.sigma).toFixed(1)}σ；這仍是歷史回測，不是下期機率。`, className: result.sigma > 0 ? "up" : "down" };
+    box.innerHTML = `<div class="text-secondary">模型：最近${FORECAST.window}期出現率（z 上限 ±${FORECAST.zCap}）與今次間距相對平均間距加權（權重${FORECAST.weightRecent}／${FORECAST.weightGap}），每期估計限制在${(FORECAST.minRate * 100).toFixed(0)}–${(FORECAST.maxRate * 100).toFixed(0)}%。只用回測起點之前的資料。</div>`
+      + `<div>未來${result.horizon}期回測：暖機${FORECAST.warmup}期，${result.anchors}個起點，每次取估計最高的${FORECAST.topK}個號碼。</div>`
+      + `<div>前${FORECAST.topK}名命中 <strong>${result.topAverage.toFixed(2)}</strong>／基準${result.baselineTop.toFixed(2)}（差${difference >= 0 ? "+" : ""}${difference.toFixed(2)}，${Math.abs(result.sigma).toFixed(1)}σ）；Brier <strong>${result.modelBrier.toFixed(3)}</strong>／基準${result.baseBrier.toFixed(3)}。</div>`
+      + `<div class="text-secondary">校準：${buckets}。</div>`
+      + `<div class="text-secondary">連續性：${persistence}；每期基準${(FORECAST_BASE_RATE * 100).toFixed(2)}%。</div>`
+      + `<div class="${conclusion.className}">${conclusion.text}</div>`;
+  } catch (error) {
+    box.textContent = `無法回測：${error.message}`;
+  }
 }
 
 function monthlyReferenceHtml(label, reference) {
@@ -810,9 +1032,9 @@ function monthlyRecentTrend(months, number) {
   }
   const [previous, latest] = recent;
   const change = latest.counts[number] / latest.draws - previous.counts[number] / previous.draws;
-  const previousLow = monthlyLevel(previous, number) <= 1;
-  const latestLow = monthlyLevel(latest, number) <= 1;
-  const detail = `${previous.month}：${previous.counts[number]}次/${previous.draws}期 → ${latest.month}：${latest.counts[number]}次/${latest.draws}期（同次數視為持平，其餘按每期出現率比較）`;
+  const previousLow = monthlyLow(previous, number);
+  const latestLow = monthlyLow(latest, number);
+  const detail = `${previous.month}：${previous.counts[number]}次/${previous.draws}期 → ${latest.month}：${latest.counts[number]}次/${latest.draws}期（同次數視為持平，其餘按每期出現率比較；低位指每期出現率不高於基準7/49）`;
   if (previous.counts[number] === 0 && latest.counts[number] === 0) {
     return { text: "近2月未出", className: "text-info", detail };
   }
@@ -820,7 +1042,7 @@ function monthlyRecentTrend(months, number) {
     return { text: previousLow && latestLow ? "低位徘徊" : "近期持平", className: previousLow && latestLow ? "text-info" : "text-secondary", detail };
   }
   if (change > 1e-12) {
-    return { text: previousLow ? (latestLow ? "低位回升" : "由低位回升") : "近期上升", className: "up", detail };
+    return { text: previousLow ? (latestLow ? "低位稍回升" : "由低位回升") : "近期上升", className: "up", detail };
   }
   if (previousLow && latestLow) return { text: "低位徘徊", className: "text-info", detail };
   if (change < -1e-12) return { text: latestLow ? "下降至低位" : "近期下降", className: "down", detail };
@@ -882,12 +1104,15 @@ function monthlyCompanionHtml(stats, number, limit = 3) {
 }
 
 function renderMonthly() {
-  const table = document.getElementById("monthlyTable");
   const status = document.getElementById("monthlyStatus");
+  const horizon = monthlyHorizon();
   monthlySummary = [];
   monthlyEstimate = null;
   monthlyExtras = null;
-  table.innerHTML = "";
+  monthlyRows = [];
+  monthlyTableHead = "";
+  monthlyTableFoot = "";
+  renderMonthlyTable();
   try {
     monthlySummary = summarizeMonthly(full);
     if (monthlySummary.length) {
@@ -900,34 +1125,118 @@ function renderMonthly() {
         status.textContent = error.message;
       }
       const projectionHead = monthlyEstimate ? `${monthlyEstimate.month} 外推<small class="d-block text-secondary">假設${monthlyEstimate.draws}期</small>` : "下月外推";
-      const head = `<thead><tr><th scope="col">號碼</th>${monthlySummary.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計</th><th scope="col">偏多時段<small class="d-block text-secondary">全部歷史，月尾含31日</small></th><th scope="col" title="按同出次數排序，同次數按號碼排序；非未來機率">常同出（前3）<small class="d-block text-secondary">全部歷史，含特別號</small></th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col">走勢參考</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
-      const body = Array.from({ length: 49 }, (_, index) => {
+      const forecastHead = `未來${horizon}期<small class="d-block text-secondary">預估次數（基準）／至少出一次</small>`;
+      monthlyTableHead = `<thead><tr><th scope="col">號碼</th>${monthlySummary.map(month => `<th scope="col">${month.month}<small class="d-block text-secondary">${month.draws}期</small></th>`).join("")}<th scope="col">合計</th><th scope="col">偏多時段<small class="d-block text-secondary">全部歷史，月尾含31日</small></th><th scope="col" title="按同出次數排序，同次數按號碼排序；非未來機率">常同出（前3）<small class="d-block text-secondary">全部歷史，含特別號</small></th><th scope="col">近期走勢</th><th scope="col">${projectionHead}</th><th scope="col" title="以最近30期出現率與今次間距作小幅外推；括號內是隨機基準。偏多／偏少表示最近30期出現率的90%區間不含基準，49個號碼一同比較時約5個屬隨機波動，不代表下期較易出現">${forecastHead}</th><th scope="col"><span class="visually-hidden">Watchlist</span></th></tr></thead>`;
+      monthlyRows = Array.from({ length: 49 }, (_, index) => {
         const number = index + 1;
         const total = monthlySummary.reduce((sum, month) => sum + month.counts[number], 0);
         const estimate = monthlyEstimate ? monthlyEstimate.counts[number].toFixed(1) : "—";
-        const pattern = patternMonthly(monthlySummary, number, monthlyEstimate ? monthlyEstimate.draws : null);
-        const references = monthlyReferences(monthlySummary, number, monthlyEstimate ? monthlyEstimate.draws : null);
-        const summary = monthlyDirectionSummary(monthlySummary, number, pattern, references);
+        const forecast = forecastStats(number, horizon);
         const recent = monthlyRecentTrend(monthlySummary, number);
         const timing = monthlyTimingSummary(monthlyExtras, number);
         const saved = monthlyWatchlist.has(number);
         const watchLabel = `${saved ? "移除" : "加入"}號碼 ${number} ${saved ? "從" : "至"} watchlist`;
-        return `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}${saved ? " monthly-watched" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${monthlySummary.map(month => `<td>${month.counts[number]}</td>`).join("")}<td class="monthly-total${total >= 18 ? " up" : ""}">${total}</td><td class="monthly-timing" title="${timing.detail}">${timing.text}</td><td class="monthly-companions">${monthlyCompanionHtml(monthlyExtras, number)}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern ${summary.className}">${summary.text}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
-      }).join("");
-      const foot = `<tfoot><tr><th scope="row">合計</th>${monthlySummary.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
-      table.innerHTML = head + `<tbody>${body}</tbody>` + foot;
+        const html = `<tr data-monthly-number="${number}" tabindex="0" aria-selected="${monthlyHighlighted === number}" class="${monthlyHighlighted === number ? "monthly-highlight" : ""}${saved ? " monthly-watched" : ""}" onclick="toggleMonthlyRow(${number})" onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){event.preventDefault();toggleMonthlyRow(${number});}"><th scope="row"><button type="button" class="numbtn" aria-label="號碼 ${number} 每月走勢" aria-haspopup="dialog" onclick="event.stopPropagation();highlightMonthlyRow(${number});openMonthlyChart(${number})">${number}</button></th>${monthlySummary.map(month => `<td>${month.counts[number]}</td>`).join("")}<td class="monthly-total${total >= 18 ? " up" : ""}">${total}</td><td class="monthly-timing" title="${timing.detail}">${timing.text}</td><td class="monthly-companions">${monthlyCompanionHtml(monthlyExtras, number)}</td><td class="monthly-recent ${recent.className}" title="${recent.detail}">${recent.text}</td><td class="text-info">${estimate}</td><td class="monthly-pattern monthly-forecast">${monthlyForecastCell(forecast)}</td><td><button type="button" class="numbtn monthly-watch-toggle${saved ? " text-warning" : ""}" data-watch-number="${number}" aria-pressed="${saved}" aria-label="${watchLabel}" title="${watchLabel}" onclick="event.stopPropagation();toggleMonthlyWatchlist(${number})">${saved ? "−" : "+"}</button></td></tr>`;
+        return { number, forecast, html };
+      });
+      monthlyTableFoot = `<tfoot><tr><th scope="row">合計</th>${monthlySummary.map(month => `<td>${month.draws * 7}</td>`).join("")}<td>${full.length * 7}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td></td></tr></tfoot>`;
+      renderMonthlyTable();
     }
     if (!full.length) {
       monthlyHighlighted = null;
       status.textContent = "尚未載入結果";
     }
     else if (monthlyEstimate) {
-      status.textContent = `全部 ${full.length} 期（含特別號）；外推依據：${monthlyEstimate.start}至${monthlyEstimate.end}已載入的${monthlyEstimate.sourceDraws}期，假設下月${monthlyEstimate.draws}期。歷史外推，非下期機率；未完整月份或缺漏資料會影響估計。`;
+      status.textContent = `全部 ${full.length} 期（含特別號）；外推依據：${monthlyEstimate.start}至${monthlyEstimate.end}已載入的${monthlyEstimate.sourceDraws}期，假設下月${monthlyEstimate.draws}期。未來${horizon}期欄位以最近${FORECAST.window}期出現率與今次間距作小幅外推，括號內為隨機基準（7/49），非下期機率；未完整月份或缺漏資料會影響估計。`;
     }
   } catch (error) {
     status.textContent = `無法計算每月次數：${error.message}`;
   }
+  renderMonthlyBacktest();
   renderMonthlyChart();
+}
+
+function monthlyFilterThreshold() {
+  const input = document.getElementById("monthlyFilterExpected");
+  if (!input) return null;
+  const raw = input.value.trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, value);
+}
+
+function monthlyFilteredRows() {
+  const threshold = monthlyFilterThreshold();
+  if (threshold === null) return monthlyRows;
+  return monthlyRows.filter(row => row.forecast && row.forecast.expected >= threshold);
+}
+
+function monthlyFilteredNumbers() {
+  return monthlyFilteredRows().map(row => row.number);
+}
+
+function setMonthlyFilterToBaseline() {
+  const input = document.getElementById("monthlyFilterExpected");
+  if (!input) return;
+  input.value = (FORECAST_BASE_RATE * monthlyHorizon()).toFixed(2);
+  renderMonthlyTable();
+}
+
+function renderMonthlyTable() {
+  const table = document.getElementById("monthlyTable");
+  const bulk = document.getElementById("monthlyBulkAdd");
+  const status = document.getElementById("monthlyFilterStatus");
+  const horizonLabel = document.getElementById("monthlyFilterHorizonLabel");
+  const horizon = monthlyHorizon();
+  if (horizonLabel) horizonLabel.textContent = String(horizon);
+  if (!table) return;
+  if (!monthlyRows.length) {
+    table.innerHTML = "";
+    if (bulk) {
+      bulk.disabled = true;
+      bulk.textContent = "加入篩選至 watchlist";
+      bulk.title = "先輸入門檻才會批量加入，避免一次加入全部49個號碼";
+    }
+    if (status) status.textContent = "";
+    return;
+  }
+  const threshold = monthlyFilterThreshold();
+  const rows = monthlyFilteredRows();
+  const baseline = FORECAST_BASE_RATE * horizon;
+  const highest = monthlyRows.reduce((best, row) => (row.forecast ? Math.max(best, row.forecast.expected) : best), 0);
+  const body = rows.length
+    ? rows.map(row => row.html).join("")
+    : `<tr><td colspan="${monthlySummary.length + 8}" class="text-secondary">沒有號碼達到 ${threshold.toFixed(2)} 次（未來${horizon}期最高 ${highest.toFixed(2)} 次，基準 ${baseline.toFixed(2)} 次）。</td></tr>`;
+  table.innerHTML = monthlyTableHead + `<tbody>${body}</tbody>` + monthlyTableFoot;
+  if (bulk) {
+    const active = threshold !== null;
+    bulk.disabled = !active || !rows.length;
+    bulk.textContent = active ? `加入篩選至 watchlist（${rows.length}）` : "加入篩選至 watchlist";
+    bulk.title = active
+      ? `把畫面上${rows.length}個號碼加入 watchlist；已在 watchlist 的會略過`
+      : "先輸入門檻才會批量加入，避免一次加入全部49個號碼";
+  }
+  if (!status) return;
+  if (threshold === null) {
+    status.textContent = `顯示全部 ${monthlyRows.length} 個號碼；可輸入門檻篩選未來${horizon}期預估次數（基準 ${baseline.toFixed(2)} 次）。`;
+  } else if (rows.length) {
+    status.textContent = `顯示 ${rows.length}／${monthlyRows.length} 個號碼（門檻 ${threshold.toFixed(2)} 次；未來${horizon}期基準 ${baseline.toFixed(2)} 次）。篩選只挑出模型預估較高的號碼，回測顯示與基準無可分辨優勢。`;
+  } else {
+    status.textContent = `沒有號碼達到 ${threshold.toFixed(2)} 次（未來${horizon}期最高 ${highest.toFixed(2)} 次、基準 ${baseline.toFixed(2)} 次）。可調低門檻，或按「基準」填入基準值。`;
+  }
+}
+
+function addFilteredToWatchlist() {
+  const threshold = monthlyFilterThreshold();
+  if (threshold === null) return;
+  const numbers = monthlyFilteredNumbers();
+  if (!numbers.length) return;
+  const before = monthlyWatchlist.size;
+  numbers.forEach(number => monthlyWatchlist.add(number));
+  const added = monthlyWatchlist.size - before;
+  const skipped = numbers.length - added;
+  saveMonthlyWatchlist(`已加入${added}個號碼${skipped ? `（另有${skipped}個已在 watchlist）` : ""}；篩選結果共${numbers.length}個。`);
 }
 
 function monthlyChartData(months, numbers) {
@@ -1002,11 +1311,11 @@ function restoreMonthlyWatchlist() {
   renderMonthlyWatchlist();
 }
 
-function saveMonthlyWatchlist() {
+function saveMonthlyWatchlist(message = "") {
   const status = document.getElementById("monthlyWatchlistStatus");
   try {
     localStorage.setItem(MONTHLY_WATCHLIST_KEY, JSON.stringify(sortedMonthlyWatchlist()));
-    status.textContent = "";
+    status.textContent = message;
   } catch (error) {
     status.textContent = "瀏覽器無法儲存 watchlist；目前仍可複製，重新整理後可能不會保留。";
   }
@@ -1080,17 +1389,21 @@ function renderMonthlyChart() {
   const plannedDraws = monthlyEstimate ? monthlyEstimate.draws : null;
   const pattern = patternMonthly(monthlySummary, monthlyChartNumber, plannedDraws);
   const references = monthlyReferences(monthlySummary, monthlyChartNumber, plannedDraws);
-  const summary = monthlyDirectionSummary(monthlySummary, monthlyChartNumber, pattern, references);
+  const horizon = monthlyHorizon();
+  const forecast = forecastStats(monthlyChartNumber, horizon);
   const examples = pattern.matches.map(match => `<div class="text-secondary">${match.start}至${match.end}後，${match.next}：${match.count}次/${match.draws}期</div>`).join("");
   const timing = monthlyTimingSummary(monthlyExtras, monthlyChartNumber);
   const historyDetails = `<div class="mt-2"><strong>月內時段：${timing.text}</strong><div class="text-secondary">${timing.detail}</div></div><div class="mt-2"><strong>同出紀錄（全部歷史，含特別號）</strong><div class="d-flex flex-wrap gap-1 mt-1">${monthlyCompanionHtml(monthlyExtras, monthlyChartNumber, 48)}</div><div class="text-secondary">按同出次數排序，同次數按號碼排序。只代表已載入紀錄，不代表以後必定同出。</div></div>`;
-  document.getElementById("monthlyReferenceDetails").innerHTML = `<strong class="${summary.className}">${summary.text}</strong><details class="mt-2"><summary>查看歷史依據</summary>${historyDetails}${summary.source ? `<div class="mt-2">摘要依據：${summary.source}（${summary.samples}例）${summary.samples < 3 ? "，樣本少，僅供參考" : ""}</div>` : ""}<div class="mt-2"><strong>近2月模式：${monthlyPatternText(pattern)}</strong>${examples}</div>` + monthlyReferenceHtml("同次數", references.level) + monthlyReferenceHtml("近2月方向", references.move) + monthlyReferenceHtml("近3月形態", references.shape) + "</details>";
+  const forecastText = forecast
+    ? `<strong>未來${horizon}期：預估 ${forecast.expected.toFixed(2)} 次（基準 ${forecast.baselineExpected.toFixed(2)}），至少出一次 ${Math.round(forecast.atLeast * 100)}%（基準 ${Math.round(forecast.baselineAtLeast * 100)}%）</strong><div class="text-secondary">${forecast.detail}</div>`
+    : `<strong>未來${horizon}期：資料不足</strong>`;
+  document.getElementById("monthlyReferenceDetails").innerHTML = forecastText + `<details class="mt-2"><summary>查看歷史依據</summary>${historyDetails}<div class="mt-2"><strong>近2月模式：${monthlyPatternText(pattern)}</strong>${examples}<div class="text-secondary mt-1">以下三項參考只描述已載入的月度紀錄；每項附例數與基準，不構成方向預測。</div></div>` + monthlyReferenceHtml("同次數", references.level) + monthlyReferenceHtml("近2月方向", references.move) + monthlyReferenceHtml("近3月形態", references.shape) + "</details>";
   if (typeof Chart === "undefined") {
     document.getElementById("monthlyChartStatus").textContent = "Chart.js 無法載入；每月次數仍可查看表格。";
     return;
   }
   const data = monthlyChartData(monthlySummary, [monthlyChartNumber]);
-  document.getElementById("monthlyChartStatus").textContent = (monthlyEstimate ? `${monthlyEstimate.month} 歷史外推：${monthlyEstimate.counts[monthlyChartNumber].toFixed(1)}次（假設${monthlyEstimate.draws}期），非下期機率。` : "") + "僅歷史參考，不代表下月更可能出現。";
+  document.getElementById("monthlyChartStatus").textContent = (monthlyEstimate ? `${monthlyEstimate.month} 歷史外推：${monthlyEstimate.counts[monthlyChartNumber].toFixed(1)}次（假設${monthlyEstimate.draws}期），非下期機率。` : "") + `未來${horizon}期為歷史走勢外推，括號內是隨機基準，不代表下期更可能出現。`;
   document.getElementById("monthlyChart").setAttribute("aria-label", `${data.datasets.map(dataset => dataset.label).join("、")}每月次數折線圖；完整次數見表格`);
   if (monthlyChart) {
     monthlyChart.data = data;
