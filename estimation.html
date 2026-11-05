@@ -60,6 +60,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
 #monthlyTable td.monthly-pattern { white-space: normal; min-width: 10rem; max-width: 16rem; }
 #monthlyTable td.monthly-forecast { min-width: 9rem; max-width: 14rem; }
 #monthlyBacktestDetails > summary { cursor: pointer; }
+#wheelOutput { max-height: 24rem; }
 #monthlyBacktest > div + div { margin-top: 0.2rem; }
 @media (max-width: 991.98px) {
   .table { font-size: 0.75rem; }
@@ -88,8 +89,10 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
         <li class="nav-item"><button type="button" class="nav-link" data-section="draws" onclick="showSection('draws')">每期區間分佈</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="history" onclick="showSection('history')">所有歷史結果</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="monthly" onclick="showSection('monthly')">每月號碼走勢</button></li>
-        <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li>
-        <li class="nav-item"><button type="button" class="nav-link" data-section="randomGroups" onclick="showSection('randomGroups')">隨機分組</button></li>
+        <!-- <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li> -->
+        <!-- <li class="nav-item"><button type="button" class="nav-link" data-section="randomGroups" onclick="showSection('randomGroups')">隨機分組</button></li> -->
+        <li class="nav-item"><button type="button" class="nav-link" data-section="wheel" onclick="showSection('wheel')">縮水注項</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="cover17" onclick="showSection('cover17')">17注包49</button></li>
       </ul>
     </div>
   </div>
@@ -232,7 +235,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
     </div>
     <div id="monthlyFilterStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
     <div id="monthlyWatchlistNumbers" class="d-flex flex-wrap gap-2 mb-2" aria-label="Watchlist"></div>
-    <input id="monthlyWatchlistText" class="form-control form-control-sm font-monospace mb-2" style="max-width: 28rem" type="text" readonly aria-label="Watchlist 逗號分隔號碼">
+    <input id="monthlyWatchlistText" class="d-none form-control form-control-sm font-monospace mb-2" style="max-width: 28rem" type="text" readonly aria-label="Watchlist 逗號分隔號碼">
     <div id="monthlyWatchlistStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
     <div id="monthlyStatus" class="small text-secondary mb-2" role="status" aria-live="polite">尚未載入結果</div>
     <details id="monthlyBacktestDetails" class="mb-2">
@@ -312,6 +315,40 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
     </div>
     <div id="randomGroupStatus" class="small text-secondary mb-3" role="status" aria-live="polite"></div>
     <div id="randomGroupOutput"></div>
+  </section>
+  <section id="wheel" class="d-none" data-panel="wheel">
+    <h1 class="h5">縮水注項</h1>
+    <p class="small text-secondary mb-3">輸入要包的號碼，以逗號分隔，不限 12 個。每一注是其中 6 個號碼。若覆蓋率達到 100%，則 6 個正選全部落在這組號碼內時，至少有一注中 5 個或以上。這是條件式覆蓋，不是下期概率，也不計特別號。貪心搜索不保證注數是理論最少；畫面上會顯示計數下界。</p>
+    <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+      <div class="flex-grow-1" style="min-width:16rem;max-width:42rem">
+        <label for="wheelNumbers" class="form-label small">號碼（逗號分隔）</label>
+        <input id="wheelNumbers" class="form-control form-control-sm" type="text" inputmode="numeric" autocomplete="off" placeholder="1,2,3,4,5,6,7,8,9,10,11,12" oninput="clearWheel()">
+      </div>
+      <div>
+        <label for="wheelMaxLines" class="form-label small">最多注數（留空＝直至覆蓋）</label>
+        <input id="wheelMaxLines" class="form-control form-control-sm" type="number" min="1" step="1" placeholder="全部" oninput="clearWheel()">
+      </div>
+      <button id="wheelGenerate" type="button" class="btn btn-primary btn-sm" onclick="generateWheel()">生成注項</button>
+      <button id="wheelCopy" type="button" class="btn btn-outline-secondary btn-sm" onclick="copyWheelLines()" disabled>複製全部注項</button>
+      <button id="wheelDownload" type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadWheelLines()" disabled>下載 txt</button>
+    </div>
+    <div id="wheelStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+    <div id="wheelPreview" class="mb-2"></div>
+    <label class="visually-hidden" for="wheelOutput">生成的注項，每行一注</label>
+    <textarea id="wheelOutput" class="form-control form-control-sm font-monospace" rows="12" readonly></textarea>
+  </section>
+  <section id="cover17" class="d-none" data-panel="cover17">
+    <h1 class="h5">17注包49</h1>
+    <p class="small text-secondary mb-3">固定生成 17 注，每注 6 個號碼，49 個號碼全部至少出現一次。第 1–8 注用 48 個號碼且不重覆，剩 1 個；第 9 注是該號碼加隨機 5 個。第 10–16 注不用那 5 個，在其餘 44 個裡不重覆組成 7 注，剩 2 個。第 17 注是那 2 個，再從其餘 47 個隨機加 4 個。這不是中獎保證，也不是下期概率。</p>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <button type="button" class="btn btn-primary btn-sm" onclick="generateCover17()">隨機生成</button>
+      <button id="cover17Copy" type="button" class="btn btn-outline-secondary btn-sm" onclick="copyCover17Lines()" disabled>複製全部注項</button>
+      <button id="cover17Download" type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadCover17Lines()" disabled>下載 txt</button>
+    </div>
+    <div id="cover17Status" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+    <div id="cover17Preview" class="mb-2"></div>
+    <label class="visually-hidden" for="cover17Output">17注，每行一注</label>
+    <textarea id="cover17Output" class="form-control form-control-sm font-monospace" rows="17" readonly></textarea>
   </section>
 </main>
 
@@ -1997,6 +2034,454 @@ function renderBands() {
     return `<tr class="${outside.trim()}"><td>${index}</td><td>${result.date}</td>${nums}<td>${numCell(result.special)}</td>${bands}</tr>`;
   }).join("");
   document.getElementById("bandTable").innerHTML = head + `<tbody>${body}</tbody>`;
+}
+
+let wheelToken = 0;
+let wheelRunning = false;
+let wheelLines = [];
+let wheelText = "";
+const WHEEL_GREEDY_LIMIT = 22;
+const WHEEL_VISIBLE_LINE_LIMIT = 4000;
+
+function clearWheel() {
+  wheelToken++;
+  wheelLines = [];
+  wheelText = "";
+  document.getElementById("wheelOutput").value = "";
+  document.getElementById("wheelPreview").innerHTML = "";
+  document.getElementById("wheelCopy").disabled = true;
+  document.getElementById("wheelDownload").disabled = true;
+  const status = document.getElementById("wheelStatus");
+  const parsed = parseWheelNumbers(document.getElementById("wheelNumbers").value, true);
+  status.textContent = parsed.numbers ? describeWheelPool(parsed.numbers) : "";
+}
+
+function parseWheelNumbers(text, quiet = false) {
+  const parts = String(text).split(/[,，、\s]+/).map(part => part.trim()).filter(Boolean);
+  if (!parts.length) {
+    if (quiet) return { numbers: null, duplicates: 0 };
+    throw new Error("請輸入號碼，以逗號分隔。");
+  }
+  const numbers = [];
+  const seen = new Set();
+  let duplicates = 0;
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) {
+      if (quiet) return { numbers: null, duplicates: 0 };
+      throw new Error(`「${part}」不是有效號碼。`);
+    }
+    const number = Number(part);
+    if (!Number.isInteger(number) || number < 1 || number > 49) {
+      if (quiet) return { numbers: null, duplicates: 0 };
+      throw new Error("號碼必須介乎1至49。");
+    }
+    if (seen.has(number)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(number);
+    numbers.push(number);
+  }
+  if (numbers.length < 6) {
+    if (quiet) return { numbers: null, duplicates };
+    throw new Error("至少需要6個不重複號碼。");
+  }
+  numbers.sort((first, second) => first - second);
+  return { numbers, duplicates };
+}
+
+function readWheelMaxLines() {
+  const text = document.getElementById("wheelMaxLines").value.trim();
+  if (!text) return Infinity;
+  if (!/^\d+$/.test(text) || Number(text) < 1) throw new Error("最多注數必須是正整數，或留空以覆蓋全部。");
+  return Number(text);
+}
+
+function wheelCombinationCount(n, k) {
+  if (k < 0 || k > n) return 0;
+  let result = 1;
+  for (let index = 1; index <= k; index++) result = result * (n - k + index) / index;
+  return Math.round(result);
+}
+
+function wheelLowerBound(poolSize) {
+  if (poolSize < 6) return 0;
+  return Math.ceil(wheelCombinationCount(poolSize, 6) / (1 + 6 * (poolSize - 6)));
+}
+
+function describeWheelPool(numbers) {
+  const total = wheelCombinationCount(numbers.length, 6);
+  const lower = wheelLowerBound(numbers.length);
+  const warning = lower > 2000 ? " 下界已超過 2000 注，可先填最多注數，只覆蓋一部分開獎組合。" : "";
+  return `${numbers.length} 個號碼，可能開獎組合 ${total.toLocaleString("zh-HK")} 個。全部覆蓋的計數下界是 ${lower.toLocaleString("zh-HK")} 注。${warning}`;
+}
+
+function wheelBinom(maxN) {
+  const binom = Array.from({ length: maxN + 1 }, () => new Uint32Array(7));
+  for (let n = 0; n <= maxN; n++) {
+    binom[n][0] = 1;
+    for (let k = 1; k <= Math.min(6, n); k++) binom[n][k] = binom[n - 1][k - 1] + binom[n - 1][k];
+  }
+  return binom;
+}
+
+function yieldToUi() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+async function buildGreedyWheel(pool, maxLines, token, onProgress) {
+  const n = pool.length;
+  const total = wheelCombinationCount(n, 6);
+  const masks = new Uint32Array(total);
+  let written = 0;
+  const collect = (start, chosen, mask) => {
+    if (chosen === 6) {
+      masks[written++] = mask;
+      return;
+    }
+    for (let bit = start; bit <= n - (6 - chosen); bit++) collect(bit + 1, chosen + 1, mask | (1 << bit));
+  };
+  collect(0, 0, 0);
+  const coverSize = 1 + 6 * (n - 6);
+  const indexOf = new Map();
+  for (let index = 0; index < total; index++) indexOf.set(masks[index], index);
+  const covered = new Uint8Array(total);
+  const score = new Uint16Array(total);
+  const prev = new Int32Array(total);
+  const next = new Int32Array(total);
+  const head = new Int32Array(coverSize + 1);
+  head.fill(-1);
+  const link = (index, value) => {
+    score[index] = value;
+    prev[index] = -1;
+    next[index] = head[value];
+    if (head[value] !== -1) prev[head[value]] = index;
+    head[value] = index;
+  };
+  const unlink = index => {
+    const value = score[index];
+    if (prev[index] !== -1) next[prev[index]] = next[index];
+    else head[value] = next[index];
+    if (next[index] !== -1) prev[next[index]] = prev[index];
+  };
+  for (let index = 0; index < total; index++) link(index, coverSize);
+  const closed = mask => {
+    const indexes = [indexOf.get(mask)];
+    const inside = [];
+    for (let bit = 0; bit < n; bit++) if (mask & (1 << bit)) inside.push(bit);
+    for (let bit = 0; bit < n; bit++) {
+      if (mask & (1 << bit)) continue;
+      for (const drop of inside) indexes.push(indexOf.get((mask ^ (1 << drop)) | (1 << bit)));
+    }
+    return indexes;
+  };
+  const lines = [];
+  let coveredCount = 0;
+  let best = coverSize;
+  while (coveredCount < total && lines.length < maxLines) {
+    if (token !== wheelToken) return null;
+    while (best > 0 && head[best] === -1) best--;
+    if (best === 0) break;
+    let pick = head[best];
+    for (let cursor = next[pick]; cursor !== -1; cursor = next[cursor]) if (cursor < pick) pick = cursor;
+    unlink(pick);
+    score[pick] = 0;
+    const mask = masks[pick];
+    const line = [];
+    for (let bit = 0; bit < n; bit++) if (mask & (1 << bit)) line.push(pool[bit]);
+    lines.push(line);
+    for (const dominated of closed(mask)) {
+      if (covered[dominated]) continue;
+      covered[dominated] = 1;
+      coveredCount++;
+      for (const affected of closed(masks[dominated])) {
+        if (score[affected] === 0) continue;
+        const reduced = score[affected] - 1;
+        unlink(affected);
+        link(affected, reduced);
+      }
+    }
+    if (lines.length % 40 === 0) {
+      onProgress(lines.length, coveredCount, total);
+      await yieldToUi();
+    }
+  }
+  return { lines, coveredCount, total };
+}
+
+function rankColex(combo, binom) {
+  let rank = 0;
+  for (let index = 0; index < combo.length; index++) rank += binom[combo[index]][index + 1];
+  return rank;
+}
+
+function unrankColex(rank, n, binom) {
+  const combo = new Array(6);
+  for (let size = 6; size >= 1; size--) {
+    let low = size - 1;
+    let high = n - 1;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (binom[mid][size] <= rank) low = mid;
+      else high = mid - 1;
+    }
+    combo[size - 1] = low;
+    rank -= binom[low][size];
+    n = low;
+  }
+  return combo;
+}
+
+async function buildScanWheel(pool, maxLines, token, onProgress) {
+  const n = pool.length;
+  const binom = wheelBinom(n);
+  const total = binom[n][6];
+  const bitset = new Uint8Array((total + 7) >> 3);
+  const lines = [];
+  let coveredCount = 0;
+  const mark = combo => {
+    const rank = rankColex(combo, binom);
+    const byte = rank >> 3;
+    const bit = 1 << (rank & 7);
+    if (bitset[byte] & bit) return 0;
+    bitset[byte] |= bit;
+    return 1;
+  };
+  const cover = combo => {
+    let added = mark(combo);
+    const outside = [];
+    let cursor = 0;
+    for (let value = 0; value < n; value++) {
+      if (cursor < 6 && combo[cursor] === value) cursor++;
+      else outside.push(value);
+    }
+    const base = new Array(5);
+    for (let drop = 0; drop < 6; drop++) {
+      let write = 0;
+      for (let read = 0; read < 6; read++) if (read !== drop) base[write++] = combo[read];
+      for (const add of outside) {
+        const neighbor = new Array(6);
+        let placed = false;
+        let target = 0;
+        for (let read = 0; read < 5; read++) {
+          if (!placed && add < base[read]) {
+            neighbor[target++] = add;
+            placed = true;
+          }
+          neighbor[target++] = base[read];
+        }
+        if (!placed) neighbor[5] = add;
+        added += mark(neighbor);
+      }
+    }
+    return added;
+  };
+  const gcd = (left, right) => right ? gcd(right, left % right) : left;
+  let step = Math.max(1, Math.floor(total / 3) | 1);
+  while (gcd(step, total) !== 1) step += 2;
+  for (let index = 0, rank = 0; index < total && coveredCount < total && lines.length < maxLines; index++, rank = (rank + step) % total) {
+    if (bitset[rank >> 3] & (1 << (rank & 7))) continue;
+    const combo = unrankColex(rank, n, binom);
+    lines.push(combo.map(position => pool[position]));
+    coveredCount += cover(combo);
+    if (lines.length % 250 === 0) {
+      if (token !== wheelToken) return null;
+      onProgress(lines.length, coveredCount, total);
+      await yieldToUi();
+    }
+  }
+  return { lines, coveredCount, total };
+}
+
+function wheelResultText(poolSize, lines, covered, total, maxLines) {
+  const lower = wheelLowerBound(poolSize);
+  const percent = total ? (covered / total * 100).toFixed(1) : "0.0";
+  const cap = Number.isFinite(maxLines) ? `，上限 ${maxLines.toLocaleString("zh-HK")} 注` : "";
+  const guarantee = covered === total
+    ? "若 6 個正選全部落在這組號碼內，至少一注中 5 個或以上。"
+    : "尚未覆蓋全部開獎組合，未覆蓋的組合不保證有注中 5 個。";
+  const hidden = lines > WHEEL_VISIBLE_LINE_LIMIT ? `畫面上只列出首 80 注，複製與下載包含全部 ${lines.toLocaleString("zh-HK")} 注。` : "";
+  return `${poolSize} 個號碼，可能開獎組合 ${total.toLocaleString("zh-HK")} 個，計數下界 ${lower.toLocaleString("zh-HK")} 注${cap}。已生成 ${lines.toLocaleString("zh-HK")} 注，覆蓋 ${covered.toLocaleString("zh-HK")}/${total.toLocaleString("zh-HK")}（${percent}%）。${guarantee}搜索不保證這是理論最少注數。特別號不計，這也不是下期概率。${hidden}`;
+}
+
+function renderWheelResult(lines, statusText) {
+  wheelLines = lines;
+  wheelText = lines.map(line => line.join(",")).join("\n");
+  const visible = lines.length > WHEEL_VISIBLE_LINE_LIMIT ? lines.slice(0, 80) : lines;
+  document.getElementById("wheelOutput").value = visible.map(line => line.join(",")).join("\n");
+  document.getElementById("wheelPreview").innerHTML = lines.length > 40 ? "" : lines.map((line, index) =>
+    `<div class="d-flex flex-wrap gap-1 align-items-center mb-1"><span class="small text-secondary" style="width:2.5rem">${index + 1}</span>${line.map(number => numCell(number, true)).join("")}</div>`
+  ).join("");
+  document.getElementById("wheelStatus").textContent = statusText;
+  document.getElementById("wheelCopy").disabled = lines.length === 0;
+  document.getElementById("wheelDownload").disabled = lines.length === 0;
+}
+
+async function generateWheel() {
+  if (wheelRunning) return;
+  wheelRunning = true;
+  const token = ++wheelToken;
+  const status = document.getElementById("wheelStatus");
+  const button = document.getElementById("wheelGenerate");
+  button.disabled = true;
+  try {
+    const parsed = parseWheelNumbers(document.getElementById("wheelNumbers").value);
+    const maxLines = readWheelMaxLines();
+    status.textContent = "生成中…";
+    document.getElementById("wheelOutput").value = "";
+    document.getElementById("wheelPreview").innerHTML = "";
+    const onProgress = (lines, covered, total) => {
+      if (token !== wheelToken) return;
+      status.textContent = `生成中… ${lines.toLocaleString("zh-HK")} 注，已覆蓋 ${covered.toLocaleString("zh-HK")}/${total.toLocaleString("zh-HK")}`;
+    };
+    const result = parsed.numbers.length <= WHEEL_GREEDY_LIMIT
+      ? await buildGreedyWheel(parsed.numbers, maxLines, token, onProgress)
+      : await buildScanWheel(parsed.numbers, maxLines, token, onProgress);
+    if (!result || token !== wheelToken) return;
+    result.lines.sort((left, right) => {
+      for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return left[index] - right[index];
+      return 0;
+    });
+    const duplicateNote = parsed.duplicates ? `已略過 ${parsed.duplicates} 個重複號碼。` : "";
+    renderWheelResult(result.lines, duplicateNote + wheelResultText(parsed.numbers.length, result.lines.length, result.coveredCount, result.total, maxLines));
+  } catch (error) {
+    if (token !== wheelToken) return;
+    status.textContent = error.message;
+  } finally {
+    wheelRunning = false;
+    button.disabled = false;
+  }
+}
+
+async function copyWheelLines() {
+  if (!wheelText) return;
+  const status = document.getElementById("wheelStatus");
+  const previous = status.textContent;
+  try {
+    await writeClipboardText(wheelText);
+    status.textContent = `已複製 ${wheelLines.length.toLocaleString("zh-HK")} 注。${previous}`;
+  } catch (error) {
+    const field = document.getElementById("wheelOutput");
+    field.focus();
+    field.select();
+    status.textContent = "無法自動複製。注數很多時請用下載 txt；否則可從文字框手動複製。";
+  }
+}
+
+function downloadWheelLines() {
+  if (!wheelText) return;
+  const blob = new Blob([wheelText], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "mark6-wheel.txt";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+let cover17Lines = [];
+let cover17Text = "";
+
+function shuffleNumbers(numbers) {
+  const shuffled = [...numbers];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const target = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[target]] = [shuffled[target], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function chunkSix(numbers) {
+  const lines = [];
+  for (let index = 0; index < numbers.length; index += 6) {
+    lines.push(numbers.slice(index, index + 6).sort((first, second) => first - second));
+  }
+  return lines;
+}
+
+function buildCover17() {
+  const all = Array.from({ length: 49 }, (_, index) => index + 1);
+  const shuffled = shuffleNumbers(all);
+  const unusedFirst = shuffled[48];
+  const firstLines = chunkSix(shuffled.slice(0, 48));
+  const randomFive = shuffleNumbers(shuffled.slice(0, 48)).slice(0, 5).sort((first, second) => first - second);
+  const ninth = [...randomFive, unusedFirst].sort((first, second) => first - second);
+  const excluded = new Set(randomFive);
+  const fortyFour = shuffleNumbers(all.filter(number => !excluded.has(number)));
+  const unusedPair = fortyFour.slice(42).sort((first, second) => first - second);
+  const middleLines = chunkSix(fortyFour.slice(0, 42));
+  const unusedSet = new Set(unusedPair);
+  const randomFour = shuffleNumbers(all.filter(number => !unusedSet.has(number))).slice(0, 4).sort((first, second) => first - second);
+  const last = [...unusedPair, ...randomFour].sort((first, second) => first - second);
+  const lines = [...firstLines, ninth, ...middleLines, last];
+  const roles = [
+    ...Array(8).fill("48個不重覆"),
+    "未用1個 + 隨機5個",
+    ...Array(7).fill("44個裡不重覆"),
+    "未用2個 + 隨機4個"
+  ];
+  if (lines.length !== 17 || lines.some(line => new Set(line).size !== 6)) throw new Error("17注生成失敗");
+  const firstUsed = new Set(firstLines.flat());
+  if (firstUsed.size !== 48 || firstUsed.has(unusedFirst)) throw new Error("第1–8注未能留下1個未用號碼");
+  const middleUsed = new Set(middleLines.flat());
+  if (middleUsed.size !== 42 || [...excluded].some(number => middleUsed.has(number)) || unusedPair.some(number => middleUsed.has(number))) {
+    throw new Error("第10–16注未能排除指定號碼");
+  }
+  if (!last.includes(unusedPair[0]) || !last.includes(unusedPair[1]) || randomFour.some(number => unusedSet.has(number))) {
+    throw new Error("第17注未能用上2個未用號碼");
+  }
+  if (new Set(lines.flat()).size !== 49) throw new Error("未能包含全部49個號碼");
+  return { lines, roles, unusedFirst, randomFive, unusedPair, randomFour };
+}
+
+function generateCover17() {
+  const status = document.getElementById("cover17Status");
+  try {
+    const built = buildCover17();
+    cover17Lines = built.lines;
+    cover17Text = built.lines.map(line => line.join(",")).join("\n");
+    document.getElementById("cover17Output").value = cover17Text;
+    document.getElementById("cover17Preview").innerHTML = built.lines.map((line, index) =>
+      `<div class="mb-2"><div class="small text-secondary">第${index + 1}注 · ${built.roles[index]}</div><div class="d-flex flex-wrap gap-1">${line.map(number => numCell(number, true)).join("")}</div></div>`
+    ).join("");
+    status.textContent = `已生成17注，49個號碼全部至少出現一次。第1–8注未用 ${built.unusedFirst}。第9注隨機5個：${built.randomFive.join(",")}。第10–16注未用 ${built.unusedPair.join(",")}。第17注隨機4個：${built.randomFour.join(",")}。`;
+    document.getElementById("cover17Copy").disabled = false;
+    document.getElementById("cover17Download").disabled = false;
+  } catch (error) {
+    cover17Lines = [];
+    cover17Text = "";
+    document.getElementById("cover17Output").value = "";
+    document.getElementById("cover17Preview").innerHTML = "";
+    document.getElementById("cover17Copy").disabled = true;
+    document.getElementById("cover17Download").disabled = true;
+    status.textContent = error.message;
+  }
+}
+
+async function copyCover17Lines() {
+  if (!cover17Text) return;
+  const status = document.getElementById("cover17Status");
+  const previous = status.textContent;
+  try {
+    await writeClipboardText(cover17Text);
+    status.textContent = `已複製17注。${previous}`;
+  } catch (error) {
+    const field = document.getElementById("cover17Output");
+    field.focus();
+    field.select();
+    status.textContent = "無法自動複製，已選取注項，可手動複製。";
+  }
+}
+
+function downloadCover17Lines() {
+  if (!cover17Text) return;
+  const blob = new Blob([cover17Text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "mark6-cover17.txt";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 loadJson();

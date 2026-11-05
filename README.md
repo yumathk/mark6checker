@@ -8,7 +8,7 @@ Every import is validated before replacing the loaded history: each record needs
 
 ## Estimation page
 
-[estimation.html](estimation.html) has seven sections.
+[estimation.html](estimation.html) has nine sections.
 
 ### 每個號碼的 5 期走勢
 
@@ -93,3 +93,22 @@ Load at least 30 draws, then choose **2組**, **3組**, or **4組** and click **
 - Generate again to reshuffle. Changing the group count, editing the ranges, or loading new results clears the generated lists and any open number popover. Invalid ranges or a pool too small to meet the category requirements produce an error rather than partial groups.
 
 Random grouping is a way to organise the numbers, not a prediction of future draws.
+
+### 縮水注項
+
+Enter a pool as comma-separated numbers from 1–49. Chinese commas and extra spaces are accepted. Duplicates are removed. At least six distinct numbers are required; the pool is not limited to 12. Leave **最多注數** blank to cover every possible 6-number draw inside that pool, or set a cap to stop earlier.
+
+Each generated line is six of the entered numbers. A line covers a possible draw when they share at least five numbers. The status shows the number of possible draws, C(n, 6), the counting lower bound ceil(C(n, 6) / (1 + 6(n − 6))), the line count, and the exact coverage. At 100% coverage, if all six main numbers fall inside the pool, at least one line matches five or more of them. The special number is not part of this guarantee. Partial coverage does not make that promise for the uncovered draws.
+
+Pools of up to 22 numbers use the greedy maximum-coverage search. Larger pools use a direct covering scan, which can need several times the lower bound. Neither search certifies a minimum wheel. A blank cap on a large pool can produce tens of thousands of lines; set **最多注數** to cover only part of the draws. The on-screen list shows the first 80 lines once the result exceeds 4,000 lines. **複製全部注項** and **下載 txt** use the full list, one comma-separated line per bet. Editing the pool or the cap clears the result. This is a conditional cover, not a next-draw probability and not an increase in the expected value of a ticket.
+
+### 17注包49
+
+**隨機生成** builds 17 bets of six numbers from 1–49. Every number appears at least once. Click again to reshuffle.
+
+- Lines 1–8 are eight disjoint bets from 48 numbers. One number is left out.
+- Line 9 is that leftover plus five numbers drawn at random from the 48.
+- Lines 10–16 do not use those five. They are seven disjoint bets from 42 of the remaining 44, so two numbers are left out.
+- Line 17 is those two leftovers plus four numbers drawn at random from the other 47. Those four may include the five used on line 9.
+
+Lines 1–8 do not repeat a number. Lines 10–16 do not repeat a number and do not use line 9's five. Lines 9 and 17 may reuse numbers from earlier lines. The status names the leftover and the random fillers. Each line is also listed with its role, and the numbers can be clicked for the same statistics popover. **複製全部注項** and **下載 txt** contain only the 17 comma-separated lines, with no labels. This is not a prize guarantee and not a next-draw probability.
