@@ -93,6 +93,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
         <!-- <li class="nav-item"><button type="button" class="nav-link" data-section="randomGroups" onclick="showSection('randomGroups')">隨機分組</button></li> -->
         <li class="nav-item"><button type="button" class="nav-link" data-section="wheel" onclick="showSection('wheel')">縮水注項</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="cover17" onclick="showSection('cover17')">17注包49</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="rangeCover" onclick="showSection('rangeCover')">範圍包號</button></li>
       </ul>
     </div>
   </div>
@@ -349,6 +350,28 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
     <div id="cover17Preview" class="mb-2"></div>
     <label class="visually-hidden" for="cover17Output">17注，每行一注</label>
     <textarea id="cover17Output" class="form-control form-control-sm font-monospace" rows="17" readonly></textarea>
+  </section>
+  <section id="rangeCover" class="d-none" data-panel="rangeCover">
+    <h1 class="h5">範圍包號</h1>
+    <p class="small text-secondary mb-3">輸入範圍，例如 1-30,41-49；留空代表 1–49。每注 6 個號碼，注內不重覆。範圍內每個號碼至少出現一次，同一號碼可以出現在多注。先用不重覆的注覆蓋，餘數每個各自加 5 個已用號碼；那 5 個不進入下一輪，然後重複直到指定注數。注數留空時用大約「號碼數 / 2.6」的建議值。這不是中獎保證，也不是下期概率。</p>
+    <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+      <div class="flex-grow-1" style="min-width:16rem;max-width:42rem">
+        <label for="rangeCoverPool" class="form-label small">號碼範圍（留空＝1–49）</label>
+        <input id="rangeCoverPool" class="form-control form-control-sm" type="text" inputmode="text" autocomplete="off" placeholder="1-30,41-49" oninput="clearRangeCover()">
+      </div>
+      <div>
+        <label for="rangeCoverDraws" class="form-label small">注數（留空＝建議注數）</label>
+        <input id="rangeCoverDraws" class="form-control form-control-sm" type="number" min="1" max="60" step="1" placeholder="建議" oninput="clearRangeCover()">
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="generateRangeCover()">生成注項</button>
+      <button id="rangeCoverCopy" type="button" class="btn btn-outline-secondary btn-sm" onclick="copyRangeCoverLines()" disabled>複製全部注項</button>
+      <button id="rangeCoverDownload" type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadRangeCoverLines()" disabled>下載 txt</button>
+    </div>
+    <div id="rangeCoverHint" class="small text-secondary mb-2"></div>
+    <div id="rangeCoverStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+    <div id="rangeCoverPreview" class="mb-2"></div>
+    <label class="visually-hidden" for="rangeCoverOutput">生成的注項，每行一注</label>
+    <textarea id="rangeCoverOutput" class="form-control form-control-sm font-monospace" rows="12" readonly></textarea>
   </section>
 </main>
 
@@ -2484,7 +2507,194 @@ function downloadCover17Lines() {
   URL.revokeObjectURL(url);
 }
 
+let rangeCoverLines = [];
+let rangeCoverText = "";
+
+function parseRangeCoverPool(text) {
+  return parseGroupRanges(String(text).replace(/[，、]/g, ","));
+}
+
+function rangeCoverLimits(pool) {
+  const count = pool.length;
+  if (count < 6) throw new Error("至少需要6個號碼");
+  const remainder = count % 6;
+  const blocks = Math.floor(count / 6);
+  if (remainder > 0 && 5 * remainder > blocks * 6) {
+    throw new Error(`餘數${remainder}個，不能各自配5個不重覆號碼（只有${blocks * 6}個已用號碼）`);
+  }
+  const minDraws = blocks + (remainder === 0 ? 0 : remainder);
+  const defaultDraws = Math.min(60, Math.max(minDraws, Math.round(count / 2.6)));
+  return { count, remainder, blocks, minDraws, defaultDraws };
+}
+
+function planRangeCoverCycle(pool) {
+  const count = pool.length;
+  const remainder = count % 6;
+  const blocks = Math.floor(count / 6);
+  const possible = count >= 6 && blocks >= 1 && (remainder === 0 || 5 * remainder <= blocks * 6);
+  return { possible, lineCount: possible ? blocks + (remainder === 0 ? 0 : remainder) : 0, blocks, remainder };
+}
+
+function runRangeCoverCycle(pool) {
+  const plan = planRangeCoverCycle(pool);
+  if (!plan.possible) throw new Error("這個範圍不能用剩餘號碼各自成注");
+  const shuffled = shuffleNumbers(pool);
+  const used = shuffled.slice(0, plan.blocks * 6);
+  const leftovers = shuffled.slice(plan.blocks * 6);
+  const lines = chunkSix(used);
+  const roles = lines.map(() => `${used.length}個不重覆`);
+  let nextPool = [...pool];
+  let fillers = [];
+  if (plan.remainder > 0) {
+    fillers = shuffleNumbers(used).slice(0, 5 * plan.remainder);
+    for (let index = 0; index < plan.remainder; index++) {
+      lines.push([leftovers[index], ...fillers.slice(index * 5, index * 5 + 5)].sort((first, second) => first - second));
+      roles.push("未用1個 + 5個");
+    }
+    const fillerSet = new Set(fillers);
+    nextPool = pool.filter(number => !fillerSet.has(number));
+  }
+  return { lines, roles, leftovers, fillers, nextPool };
+}
+
+function appendRangeCoverPartial(lines, roles, pool, original, need) {
+  const working = pool.length >= 6 ? pool : original;
+  const blocks = Math.min(Math.floor(working.length / 6), need);
+  if (blocks > 0) {
+    const chunk = chunkSix(shuffleNumbers(working).slice(0, blocks * 6));
+    lines.push(...chunk);
+    roles.push(...chunk.map(() => "續輪不重覆"));
+    need -= blocks;
+  }
+  while (need > 0) {
+    const source = working.length >= 6 ? working : original;
+    lines.push(shuffleNumbers(source).slice(0, 6).sort((first, second) => first - second));
+    roles.push("補足6個");
+    need--;
+  }
+}
+
+function readRangeCoverDraws(limits) {
+  const raw = document.getElementById("rangeCoverDraws").value.trim();
+  if (!raw) return limits.defaultDraws;
+  if (!/^\d+$/.test(raw)) throw new Error("注數必須是1至60的整數");
+  return Number(raw);
+}
+
+function buildRangeCover(pool, lineCount) {
+  const limits = rangeCoverLimits(pool);
+  if (!Number.isInteger(lineCount) || lineCount < 1 || lineCount > 60) throw new Error("注數必須是1至60的整數");
+  if (lineCount * 6 < limits.count) throw new Error(`${lineCount}注最多有${lineCount * 6}個位置，不能包含${limits.count}個號碼`);
+  if (lineCount < limits.minDraws) throw new Error(`這個生成法最少需要${limits.minDraws}注，先可以讓每個剩餘號碼各自成注`);
+  const lines = [];
+  const roles = [];
+  const first = runRangeCoverCycle(pool);
+  lines.push(...first.lines);
+  roles.push(...first.roles);
+  let working = first.nextPool;
+  while (lines.length < lineCount) {
+    const need = lineCount - lines.length;
+    const cyclePool = working.length >= 6 ? working : pool;
+    const plan = planRangeCoverCycle(cyclePool);
+    if (plan.possible && need >= plan.lineCount) {
+      const cycle = runRangeCoverCycle(cyclePool);
+      if (!cycle.lines.length) break;
+      lines.push(...cycle.lines);
+      roles.push(...cycle.roles);
+      working = cycle.nextPool;
+      continue;
+    }
+    appendRangeCoverPartial(lines, roles, cyclePool, pool, need);
+    break;
+  }
+  const poolSet = new Set(pool);
+  if (lines.length !== lineCount || roles.length !== lineCount) throw new Error("範圍包號生成失敗");
+  if (lines.some(line => new Set(line).size !== 6 || line.some(number => !poolSet.has(number)))) throw new Error("有注項不是範圍內的6個不重覆號碼");
+  if (new Set(lines.flat()).size !== pool.length) throw new Error("未能包含範圍內全部號碼");
+  return { lines, roles, limits, leftovers: [...first.leftovers].sort((first, second) => first - second), fillers: [...first.fillers].sort((first, second) => first - second) };
+}
+
+function updateRangeCoverHint() {
+  const hint = document.getElementById("rangeCoverHint");
+  if (!hint) return;
+  try {
+    const pool = parseRangeCoverPool(document.getElementById("rangeCoverPool").value);
+    const limits = rangeCoverLimits(pool);
+    hint.textContent = `${limits.count}個號碼。最少${limits.minDraws}注。建議${limits.defaultDraws}注。`;
+  } catch (error) {
+    hint.textContent = error.message;
+  }
+}
+
+function clearRangeCover() {
+  closeNumberPopover();
+  rangeCoverLines = [];
+  rangeCoverText = "";
+  document.getElementById("rangeCoverOutput").value = "";
+  document.getElementById("rangeCoverPreview").innerHTML = "";
+  document.getElementById("rangeCoverStatus").textContent = "";
+  document.getElementById("rangeCoverCopy").disabled = true;
+  document.getElementById("rangeCoverDownload").disabled = true;
+  updateRangeCoverHint();
+}
+
+function generateRangeCover() {
+  const status = document.getElementById("rangeCoverStatus");
+  try {
+    const pool = parseRangeCoverPool(document.getElementById("rangeCoverPool").value);
+    const limits = rangeCoverLimits(pool);
+    const built = buildRangeCover(pool, readRangeCoverDraws(limits));
+    rangeCoverLines = built.lines;
+    rangeCoverText = built.lines.map(line => line.join(",")).join("\n");
+    document.getElementById("rangeCoverOutput").value = rangeCoverText;
+    document.getElementById("rangeCoverPreview").innerHTML = built.lines.map((line, index) =>
+      `<div class="mb-2"><div class="small text-secondary">第${index + 1}注 · ${built.roles[index]}</div><div class="d-flex flex-wrap gap-1">${line.map(number => numCell(number, true)).join("")}</div></div>`
+    ).join("");
+    const leftoverText = built.leftovers.length
+      ? `首輪${built.limits.blocks}注不重覆，未用 ${built.leftovers.join(",")}。這${built.leftovers.length}個各自配5個：${built.fillers.join(",")}。`
+      : `首輪${built.limits.blocks}注已不重覆覆蓋全部號碼。`;
+    status.textContent = `已生成${built.lines.length}注，${built.limits.count}個號碼全部至少出現一次。${leftoverText}`;
+    document.getElementById("rangeCoverCopy").disabled = false;
+    document.getElementById("rangeCoverDownload").disabled = false;
+  } catch (error) {
+    rangeCoverLines = [];
+    rangeCoverText = "";
+    document.getElementById("rangeCoverOutput").value = "";
+    document.getElementById("rangeCoverPreview").innerHTML = "";
+    document.getElementById("rangeCoverCopy").disabled = true;
+    document.getElementById("rangeCoverDownload").disabled = true;
+    status.textContent = error.message;
+  }
+}
+
+async function copyRangeCoverLines() {
+  if (!rangeCoverText) return;
+  const status = document.getElementById("rangeCoverStatus");
+  const previous = status.textContent;
+  try {
+    await writeClipboardText(rangeCoverText);
+    status.textContent = `已複製${rangeCoverLines.length}注。${previous}`;
+  } catch (error) {
+    const field = document.getElementById("rangeCoverOutput");
+    field.focus();
+    field.select();
+    status.textContent = "無法自動複製，已選取注項，可手動複製。";
+  }
+}
+
+function downloadRangeCoverLines() {
+  if (!rangeCoverText) return;
+  const blob = new Blob([rangeCoverText], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "mark6-range-cover.txt";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 loadJson();
+updateRangeCoverHint();
 </script>
 </body>
 </html>

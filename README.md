@@ -8,7 +8,7 @@ Every import is validated before replacing the loaded history: each record needs
 
 ## Estimation page
 
-[estimation.html](estimation.html) has nine sections.
+[estimation.html](estimation.html) has ten sections.
 
 ### 每個號碼的 5 期走勢
 
@@ -112,3 +112,15 @@ Pools of up to 22 numbers use the greedy maximum-coverage search. Larger pools u
 - Line 17 is those two leftovers plus four numbers drawn at random from the other 47. Those four may include the five used on line 9.
 
 Lines 1–8 do not repeat a number. Lines 10–16 do not repeat a number and do not use line 9's five. Lines 9 and 17 may reuse numbers from earlier lines. The status names the leftover and the random fillers. Each line is also listed with its role, and the numbers can be clicked for the same statistics popover. **複製全部注項** and **下載 txt** contain only the 17 comma-separated lines, with no labels. This is not a prize guarantee and not a next-draw probability.
+
+### 範圍包號
+
+A separate generator. It does not change **17注包49**. Enter a range such as `1-30,41-49`, or leave it blank for 1–49. Chinese commas are accepted. Overlapping ranges are merged. Leave **注數** blank to use about `round(numbers / 2.6)`, or type another count from 1 to 60.
+
+Each line is six different numbers from the pool. Every pool number appears at least once, and a number may appear on more than one line.
+
+- The first cycle makes `floor(n / 6)` disjoint lines and leaves `n % 6` numbers out.
+- Each leftover then forms its own line with five distinct numbers from the lines already used. Those fillers do not enter the next cycle.
+- The same pattern continues on the remaining pool until the requested count. A short final step is ordinary six-number lines from the current pool.
+
+The hint shows the pool size, the minimum count for this pattern, and the suggested count. Generation rejects a pool smaller than six numbers, a leftover step that cannot find enough distinct fillers, fewer slots than numbers, and a count below the first cycle. For example, 39 numbers and 5 draws fail because 30 slots cannot hold 39 numbers, and 10 numbers fail because four leftovers would need 20 distinct fillers from only six numbers. **複製全部注項** and **下載 txt** contain only the comma-separated lines, with no labels. This is not a prize guarantee and not a next-draw probability.
