@@ -21,6 +21,7 @@ Uses the latest 30 draws, split into non-overlapping windows 1–5, 6–10, 11�
 - Attention tags: 近5熱, 潛力上升, 熱但近10未出, 冷但回升, and 轉冷.
 - Sort by number, activity, trend, last 5 draws, or 30-draw count. Filter by temperature, or show only non-negative trend scores.
 - Click a number to highlight its row.
+- **COPY ALL** copies every number currently shown in the table, after the temperature and attention filters, as a comma-separated list sorted by number. It does not require SELECT.
 
 ### 區間 × 5 期窗口
 

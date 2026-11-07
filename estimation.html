@@ -36,9 +36,11 @@ td.cold { background-color: #9ec5f5 !important; }
 td.mid { background-color: #495057 !important; color: #f8f9fa; }
 td.warm { background-color: #ff9800 !important; color: #212529 !important; }
 td.hot { background-color: #ff8a80 !important; font-weight: 700; }
+.total-freeze{ background-color: #ADEBB3 !important; color: #212529 !important; }
 .total-cold { background-color: #9ec5f5 !important; color: #212529 !important; }
 .total-normal { background-color: #ffe082 !important; color: #212529 !important; }
-.total-hot { background-color: #ff8a80 !important; color: #212529 !important; }
+.total-hot { background-color: #F88379 !important; color: #212529 !important; }
+.total-boiling { background-color: #DA2C43 !important; color: #212529 !important; }
 .total-legend { display: inline-block; padding: 2px 8px; border-radius: 4px; }
 tr.dim td { color: #adb5bd; }
 td.outside { background-color: #343a40 !important; color: #adb5bd; }
@@ -157,6 +159,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
       </div>
       <button type="button" id="copySelectBtn" class="btn btn-sm btn-outline-light px-3" onclick="toggleCopySelect()" aria-pressed="false">SELECT</button>
       <button type="button" id="copyBtn" class="btn btn-sm btn-outline-light px-3" onclick="copySelectedNumbers()" disabled>COPY</button>
+      <button type="button" id="copyAllBtn" class="btn btn-sm btn-outline-light px-3" onclick="copyAllTrendNumbers()">COPY ALL</button>
       <span id="copyStatus" class="small text-secondary" aria-live="polite"></span>
     </div>
     <div class="table-responsive trend-table-scroll">
@@ -479,14 +482,18 @@ function expectedBand(drawsInWindow, band) {
   return drawsInWindow * 7 * bandSize(band) / 49;
 }
 function heatClass(count) {
+  if (count == 0) return "total-freeze";
   if (count <= 1) return "total-cold";
   if (count <= 3) return "total-normal";
+  if (count >= 8) return "total-boiling";
   return "total-hot";
 }
 function bandClass(count) {
+  if (count <= 1) return "total-freeze";
   if (count <= 3) return "total-cold";
   if (count <= 6) return "total-normal";
   if (count <= 9) return "warm";
+  if (count > 11) return "total-boiling";
   return "total-hot";
 }
 function countIn(group, number) {
@@ -612,6 +619,28 @@ async function writeClipboardText(text) {
     area.remove();
   }
 }
+function visibleTrendNumbers() {
+  return [...document.querySelectorAll("#heatTable tr[data-row-number]")]
+    .map(row => Number(row.dataset.rowNumber))
+    .filter(number => Number.isInteger(number))
+    .sort((first, second) => first - second);
+}
+
+async function copyAllTrendNumbers() {
+  const numbers = visibleTrendNumbers();
+  if (!numbers.length) {
+    updateCopyStatus("沒有符合篩選的號碼");
+    return;
+  }
+  const text = numbers.join(",");
+  try {
+    await writeClipboardText(text);
+    updateCopyStatus(`已複製全部 ${numbers.length} 個：${text}`);
+  } catch (error) {
+    updateCopyStatus(`無法複製，請手動複製：${text}`);
+  }
+}
+
 async function copySelectedNumbers() {
   if (!copySelectMode) return;
   const text = sortedCopyText();
@@ -629,7 +658,7 @@ async function copySelectedNumbers() {
 }
 document.getElementById("trend").addEventListener("click", event => {
   if (!copySelectMode) return;
-  if (event.target.closest("#copySelectBtn, #copyBtn")) return;
+  if (event.target.closest("#copySelectBtn, #copyBtn, #copyAllBtn")) return;
   const button = event.target.closest(".numbtn[data-number]");
   const row = event.target.closest("#heatTable tr[data-row-number]");
   const number = button ? Number(button.dataset.number) : row ? Number(row.dataset.rowNumber) : NaN;
@@ -2019,7 +2048,7 @@ function renderHeat(rows) {
     const trendSign = row.trendScore > 0 ? "+" : "";
     const trendDirection = row.trendScore > 0 ? "up" : row.trendScore < 0 ? "down" : "";
     const cells = row.windows.map(count => `<td class="${heatClass(count)}">${count}</td>`).join("");
-    return `<tr data-row-number="${row.number}" class="${row.number === selected ? "selected-row" : ""}"><td>${numCell(row.number)}</td>${cells}<td class="${row.standard === "熱" ? "total-hot" : row.standard === "冷" ? "total-cold" : "total-normal"}">${row.c30}</td>` +
+    return `<tr data-row-number="${row.number}" class="${row.number === selected ? "selected-row" : ""}"><td>${numCell(row.number)}</td>${cells}<td class="${row.standard === "熱" ? (row.c30 > 9 ? "total-boiling" : "total-hot") : row.standard === "冷" ? "total-cold" : "total-normal"}">${row.c30}</td>` +
         `<td>${row.c15}</td><td>${row.prev}</td><td class="${direction}">${sign}${row.change}</td><td>${row.weight}</td><td class="${trendDirection}">${trendSign}${row.trendScore}</td><td>${row.gap}</td><td>${verdictFor(row)}</td></tr>`;
   }).join("");
       document.getElementById("heatTable").innerHTML = head + `<tbody>${body || '<tr><td colspan="15" class="text-secondary">沒有符合篩選的號碼</td></tr>'}</tbody>`;
