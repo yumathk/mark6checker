@@ -356,7 +356,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
   </section>
   <section id="rangeCover" class="d-none" data-panel="rangeCover">
     <h1 class="h5">範圍包號</h1>
-    <p class="small text-secondary mb-3">輸入範圍，例如 1-30,41-49；留空代表 1–49。每注 6 個號碼，注內不重覆。範圍內每個號碼至少出現一次，同一號碼可以出現在多注。先用不重覆的注覆蓋，餘數每個各自加 5 個已用號碼；那 5 個不進入下一輪，然後重複直到指定注數。注數留空時用大約「號碼數 / 2.6」的建議值。這不是中獎保證，也不是下期概率。</p>
+    <p class="small text-secondary mb-3">輸入範圍，例如 1-30,41-49；留空代表 1–49。每注 6 個號碼，注內不重覆。範圍內每個號碼至少出現一次，同一號碼可以出現在多注。每一輪先把目前的號碼分成不重覆的注，餘數每個各自從原範圍扣除這些餘數後再加 5 個。下一輪只用「原範圍 − 餘數 − 那批配號」。如果沒有餘數，下一輪回到原範圍，而且不重覆已生成的注。重複直到指定注數。注數留空時用大約「號碼數 / 2.6」的建議值。這不是中獎保證，也不是下期概率。</p>
     <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
       <div class="flex-grow-1" style="min-width:16rem;max-width:42rem">
         <label for="rangeCoverPool" class="form-label small">號碼範圍（留空＝1–49）</label>
@@ -2556,51 +2556,57 @@ function rangeCoverLimits(pool) {
   return { count, remainder, blocks, minDraws, defaultDraws };
 }
 
-function planRangeCoverCycle(pool) {
-  const count = pool.length;
-  const remainder = count % 6;
-  const blocks = Math.floor(count / 6);
-  const possible = count >= 6 && blocks >= 1 && (remainder === 0 || 5 * remainder <= blocks * 6);
-  return { possible, lineCount: possible ? blocks + (remainder === 0 ? 0 : remainder) : 0, blocks, remainder };
+function rangeCoverLineKey(line) {
+  return line.join(",");
 }
 
-function runRangeCoverCycle(pool) {
-  const plan = planRangeCoverCycle(pool);
-  if (!plan.possible) throw new Error("這個範圍不能用剩餘號碼各自成注");
-  const shuffled = shuffleNumbers(pool);
-  const used = shuffled.slice(0, plan.blocks * 6);
-  const leftovers = shuffled.slice(plan.blocks * 6);
-  const lines = chunkSix(used);
-  const roles = lines.map(() => `${used.length}個不重覆`);
-  let nextPool = [...pool];
-  let fillers = [];
-  if (plan.remainder > 0) {
-    fillers = shuffleNumbers(used).slice(0, 5 * plan.remainder);
-    for (let index = 0; index < plan.remainder; index++) {
-      lines.push([leftovers[index], ...fillers.slice(index * 5, index * 5 + 5)].sort((first, second) => first - second));
-      roles.push("未用1個 + 5個");
-    }
-    const fillerSet = new Set(fillers);
-    nextPool = pool.filter(number => !fillerSet.has(number));
+function tryRangeCoverRound(working, fullPool, budget, seen) {
+  if (working.length < 6 || budget < 1) return null;
+  const blocks = Math.floor(working.length / 6);
+  const remainder = working.length % 6;
+  if (blocks < 1) return null;
+  const shuffled = shuffleNumbers(working);
+  const disjointCount = Math.min(blocks, budget);
+  const lines = chunkSix(shuffled.slice(0, disjointCount * 6));
+  const roles = lines.map(() => `${shuffled.slice(0, blocks * 6).length}個不重覆`);
+  const keys = new Set(seen);
+  if (lines.some(line => keys.has(rangeCoverLineKey(line)) || !keys.add(rangeCoverLineKey(line)))) return null;
+  if (disjointCount < blocks || lines.length >= budget) {
+    return { lines, roles, leftovers: [], fillers: [], nextPool: [...fullPool], complete: false };
   }
-  return { lines, roles, leftovers, fillers, nextPool };
+  if (remainder === 0) {
+    return { lines, roles, leftovers: [], fillers: [], nextPool: [...fullPool], complete: true };
+  }
+  const leftovers = shuffled.slice(blocks * 6);
+  const seedCount = Math.min(remainder, budget - lines.length);
+  if (seedCount < 1) return { lines, roles, leftovers: [], fillers: [], nextPool: [...fullPool], complete: false };
+  const seeded = leftovers.slice(0, seedCount);
+  const excluded = new Set(seedCount === remainder ? leftovers : seeded);
+  const available = fullPool.filter(number => !excluded.has(number));
+  if (available.length < 5 * seedCount) return null;
+  const fillers = shuffleNumbers(available).slice(0, 5 * seedCount);
+  const seedLines = seeded.map((number, index) => [number, ...fillers.slice(index * 5, index * 5 + 5)].sort((first, second) => first - second));
+  if (seedLines.some(line => new Set(line).size !== 6 || keys.has(rangeCoverLineKey(line)) || !keys.add(rangeCoverLineKey(line)))) return null;
+  seedLines.forEach(line => {
+    lines.push(line);
+    roles.push("未用1個 + 5個");
+  });
+  const finishedSeeds = seedCount === remainder;
+  const consumed = new Set(finishedSeeds ? [...leftovers, ...fillers] : []);
+  return {
+    lines,
+    roles,
+    leftovers: seeded,
+    fillers,
+    nextPool: finishedSeeds ? fullPool.filter(number => !consumed.has(number)) : [...fullPool],
+    complete: finishedSeeds
+  };
 }
 
-function appendRangeCoverPartial(lines, roles, pool, original, need) {
-  const working = pool.length >= 6 ? pool : original;
-  const blocks = Math.min(Math.floor(working.length / 6), need);
-  if (blocks > 0) {
-    const chunk = chunkSix(shuffleNumbers(working).slice(0, blocks * 6));
-    lines.push(...chunk);
-    roles.push(...chunk.map(() => "續輪不重覆"));
-    need -= blocks;
-  }
-  while (need > 0) {
-    const source = working.length >= 6 ? working : original;
-    lines.push(shuffleNumbers(source).slice(0, 6).sort((first, second) => first - second));
-    roles.push("補足6個");
-    need--;
-  }
+function rangeCoverCombinationCount(count) {
+  let result = 1;
+  for (let index = 1; index <= 6; index++) result = result * (count - 6 + index) / index;
+  return result;
 }
 
 function readRangeCoverDraws(limits) {
@@ -2615,30 +2621,35 @@ function buildRangeCover(pool, lineCount) {
   if (!Number.isInteger(lineCount) || lineCount < 1 || lineCount > 60) throw new Error("注數必須是1至60的整數");
   if (lineCount * 6 < limits.count) throw new Error(`${lineCount}注最多有${lineCount * 6}個位置，不能包含${limits.count}個號碼`);
   if (lineCount < limits.minDraws) throw new Error(`這個生成法最少需要${limits.minDraws}注，先可以讓每個剩餘號碼各自成注`);
+  const maxDistinct = rangeCoverCombinationCount(pool.length);
+  if (lineCount > maxDistinct) throw new Error(`這個範圍最多只有${maxDistinct}注不重覆`);
   const lines = [];
   const roles = [];
-  const first = runRangeCoverCycle(pool);
-  lines.push(...first.lines);
-  roles.push(...first.roles);
-  let working = first.nextPool;
+  const seen = new Set();
+  let working = [...pool];
+  let first = null;
+  let guard = 0;
   while (lines.length < lineCount) {
-    const need = lineCount - lines.length;
-    const cyclePool = working.length >= 6 ? working : pool;
-    const plan = planRangeCoverCycle(cyclePool);
-    if (plan.possible && need >= plan.lineCount) {
-      const cycle = runRangeCoverCycle(cyclePool);
-      if (!cycle.lines.length) break;
-      lines.push(...cycle.lines);
-      roles.push(...cycle.roles);
-      working = cycle.nextPool;
-      continue;
+    if (++guard > lineCount * 12) throw new Error("不能再產生不重覆的注項");
+    if (working.length < 6) working = [...pool];
+    let round = null;
+    for (let attempt = 0; attempt < 80 && !round; attempt++) {
+      round = tryRangeCoverRound(working, pool, lineCount - lines.length, seen);
     }
-    appendRangeCoverPartial(lines, roles, cyclePool, pool, need);
-    break;
+    if (!round) throw new Error("不能再產生不重覆的注項");
+    round.lines.forEach((line, index) => {
+      seen.add(rangeCoverLineKey(line));
+      lines.push(line);
+      roles.push(round.roles[index]);
+    });
+    if (!first) first = round;
+    if (lines.length >= lineCount || !round.complete) break;
+    working = round.nextPool.length >= 6 ? round.nextPool : [...pool];
   }
   const poolSet = new Set(pool);
   if (lines.length !== lineCount || roles.length !== lineCount) throw new Error("範圍包號生成失敗");
   if (lines.some(line => new Set(line).size !== 6 || line.some(number => !poolSet.has(number)))) throw new Error("有注項不是範圍內的6個不重覆號碼");
+  if (new Set(lines.map(rangeCoverLineKey)).size !== lines.length) throw new Error("有注項重覆");
   if (new Set(lines.flat()).size !== pool.length) throw new Error("未能包含範圍內全部號碼");
   return { lines, roles, limits, leftovers: [...first.leftovers].sort((first, second) => first - second), fillers: [...first.fillers].sort((first, second) => first - second) };
 }

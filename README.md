@@ -120,8 +120,10 @@ A separate generator. It does not change **17注包49**. Enter a range such as `
 
 Each line is six different numbers from the pool. Every pool number appears at least once, and a number may appear on more than one line.
 
-- The first cycle makes `floor(n / 6)` disjoint lines and leaves `n % 6` numbers out.
-- Each leftover then forms its own line with five distinct numbers from the lines already used. Those fillers do not enter the next cycle.
-- The same pattern continues on the remaining pool until the requested count. A short final step is ordinary six-number lines from the current pool.
+- Each round makes `floor(|W| / 6)` disjoint lines from the current working set and leaves `|W| % 6` numbers out. The first working set is the full pool.
+- Each leftover then forms its own line with five distinct numbers from the full pool minus those leftovers. The next working set is the full pool minus the leftovers and those fillers.
+- If nothing is left over, the next round starts again from the full pool. For 30 numbers and 15 bets, that is five disjoint lines, then another pass over all 30. A ticket is not repeated.
+- If there is a remainder, later rounds use only the shrunk set. For 20 numbers, three disjoint lines leave 2, two seed lines use 10 fillers, and 8 numbers remain. Those 8 make one line and leave 2, then two more seed lines use 10 fillers from the other 18. For 34 numbers, five disjoint lines leave 4, four seed lines use 20 fillers, and 10 numbers remain. Those 10 make one line and leave 4, then four more seed lines. Repeat until the requested count.
+- If the next set has fewer than six numbers, generation restarts from the full pool. If no new ticket can be made, generation stops with an error.
 
 The hint shows the pool size, the minimum count for this pattern, and the suggested count. Generation rejects a pool smaller than six numbers, a leftover step that cannot find enough distinct fillers, fewer slots than numbers, and a count below the first cycle. For example, 39 numbers and 5 draws fail because 30 slots cannot hold 39 numbers, and 10 numbers fail because four leftovers would need 20 distinct fillers from only six numbers. **複製全部注項** and **下載 txt** contain only the comma-separated lines, with no labels. This is not a prize guarantee and not a next-draw probability.
