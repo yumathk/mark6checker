@@ -391,7 +391,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
       <div class="modal-body">
         <div id="monthlyChartStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
         <div class="monthly-chart-wrap">
-          <canvas id="monthlyChart" role="img" aria-label="每月號碼次數折線圖"></canvas>
+          <canvas id="monthlyChart" role="img" aria-label="每月號碼出現率折線圖"></canvas>
         </div>
         <div id="monthlyReferenceDetails" class="small mt-3"></div>
       </div>
@@ -1381,8 +1381,12 @@ function monthlyChartData(months, numbers) {
   return {
     labels,
     datasets: [...new Set(numbers)].filter(number => number >= 1 && number <= 49).map((number, index) => ({
+      number,
       label: `號碼 ${number}`,
-      data: labels.map(key => byMonth.has(key) ? byMonth.get(key).counts[number] : null),
+      data: labels.map(key => {
+        const month = byMonth.get(key);
+        return month && month.draws > 0 ? month.counts[number] / month.draws * 100 : null;
+      }),
       borderColor: colors[index],
       backgroundColor: colors[index],
       borderWidth: 2,
@@ -1532,7 +1536,7 @@ function renderMonthlyChart() {
   }
   const data = monthlyChartData(monthlySummary, [monthlyChartNumber]);
   document.getElementById("monthlyChartStatus").textContent = (monthlyEstimate ? `${monthlyEstimate.month} 歷史外推：${monthlyEstimate.counts[monthlyChartNumber].toFixed(1)}次（假設${monthlyEstimate.draws}期），非下期機率。` : "") + `未來${horizon}期為歷史走勢外推，括號內是隨機基準，不代表下期更可能出現。`;
-  document.getElementById("monthlyChart").setAttribute("aria-label", `${data.datasets.map(dataset => dataset.label).join("、")}每月次數折線圖；完整次數見表格`);
+  document.getElementById("monthlyChart").setAttribute("aria-label", `${data.datasets.map(dataset => dataset.label).join("、")}每月出現率折線圖（出現次數除以當月期數）；完整次數見表格`);
   if (monthlyChart) {
     monthlyChart.data = data;
     monthlyChart.resize();
@@ -1548,14 +1552,17 @@ function renderMonthlyChart() {
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { labels: { color: "#dee2e6" } },
-        tooltip: { callbacks: { afterBody: items => {
+        tooltip: { callbacks: { label: item => {
+          const month = monthlySummary.find(row => row.month === item.label);
+          return `${item.dataset.label}: ${item.parsed.y.toFixed(1)}%${month ? `（${month.counts[item.dataset.number]}次）` : ""}`;
+        }, afterBody: items => {
           const month = monthlySummary.find(row => row.month === items[0]?.label);
           return month ? `${month.draws}期（含特別號）` : "";
         } } }
       },
       scales: {
         x: { ticks: { color: "#adb5bd", maxRotation: 45 }, grid: { color: "#343a40" } },
-        y: { beginAtZero: true, ticks: { color: "#adb5bd", stepSize: 1 }, title: { display: true, text: "次數", color: "#dee2e6" }, grid: { color: "#343a40" } }
+        y: { beginAtZero: true, max: 100, ticks: { color: "#adb5bd", callback: value => `${value}%` }, title: { display: true, text: "出現率（%）", color: "#dee2e6" }, grid: { color: "#343a40" } }
       }
     }
   });

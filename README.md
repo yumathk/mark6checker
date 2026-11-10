@@ -45,7 +45,7 @@ The popover shows the all-history count, main versus special split, last appeara
 
 ### 每月號碼走勢
 
-Uses all loaded draws, including special numbers, grouped by calendar month. Click a number in the table to open its Chart.js line chart in a popup, oldest month first. Close with the close button, Escape, or a click on the backdrop. Months with no loaded draws appear as gaps, not zero appearances. These are raw counts; different months may contain different numbers of draws.
+Uses all loaded draws, including special numbers, grouped by calendar month. Click a number in the table to open its Chart.js line chart in a popup, oldest month first. The chart plots appearance count / loaded draws that month as a percentage on a 0–100% axis: 3 appearances in 9 draws is 33.3%, while 3 in 12 is 25%. Tooltips retain the raw appearance count and monthly draw total; the table still shows counts. Close with the close button, Escape, or a click on the backdrop. Months with no loaded draws appear as gaps, not zero appearances. These are historical appearance rates, not next-draw probabilities; partial or missing data still affects them.
 
 The table lists all 49 numbers and overall totals, with monthly count columns collapsed by default. **月份明細** can show the latest 6 loaded months, latest 12, or all months, oldest first. This only changes visible columns: totals, forecasts, historical references, and popup charts still use the full loaded history. Month headers show draw counts, and the number column stays visible during horizontal scrolling. Both views refresh with the existing URL, local-file, or pasted-JSON loader. Chart.js loads from a CDN; the table remains available if it fails to load.
 
