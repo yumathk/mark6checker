@@ -8,7 +8,7 @@ Every import is validated before replacing the loaded history: each record needs
 
 ## Estimation page
 
-[estimation.html](estimation.html) has ten sections.
+[estimation.html](estimation.html) has eleven sections.
 
 ### 每個號碼的 5 期走勢
 
@@ -76,6 +76,16 @@ Use **Add to watchlist** in the number popup to save a number; the same button c
 The expandable popup evidence includes **同次數**, **近2月方向**, and **近3月形態**. Same-count references find earlier months with the latest month's raw appearance count, not necessarily true peaks or equivalent exposure. Two-month direction references match the latest rise, fall, or flat movement; three-month shape references match both directions in the latest three-month run. Directions use unrounded appearances per draw, without requiring identical counts, so equal raw counts in months with different draw counts may have different directions. All show match counts, following-month rate rises / flats / falls, and exposure-adjusted reference counts using the planned next-month draws. Each line also prints its own sample count and the near-half rise/fall baseline, so one matching example is not read as a direction.
 
 Inside **查看歷史依據** below the popup chart, each reference lists the actual source months and the next one or two recorded monthly outcomes with draw counts. Gaps are never bridged, unavailable outcomes are not inferred, and only earlier references with a known next month are counted. Fewer than three examples are marked **樣本少**. These broader comparisons can disagree; they are not independent evidence or an ensemble forecast, and no historical rise or decline guarantees a repeat. No reference line feeds a summary sentence any more; each one exists only to show what the loaded history contains.
+
+### 下期跟進
+
+Automatically picks the latest loaded draw (`6` main numbers + `1` special number) and computes the historical next-draw hits table across `1–49` for each of those seven numbers, counting main + special on both trigger and follow-up draws. Earlier occurrences of each trigger are matched against the draw immediately following them in chronological order (the latest draw itself is excluded from the denominator because it has no next draw yet).
+
+- **後續出現率 ≥（%）:** editable text field (default `20`, quick buttons for the `14.3%` random baseline `7/49` and `20%` reset) that dynamically updates the combined shortlist, per-trigger badges, and green cell highlights.
+- **綜合達標彙總:** lists every candidate number meeting the percentage threshold from at least one of the latest draw's seven balls, ranked by number of matching triggers and pooled follow-up rate, with one-click comma-separated copying.
+- **Per-number hits tables:** seven 1–49 grids (one for each main number and the special number in the latest draw) displaying both percentage and raw hit count `(hits)`, with click-to-inspect number popovers and per-trigger copying.
+
+These are historical follow-up frequencies rather than next-draw probabilities.
 
 ### 號碼組合
 
