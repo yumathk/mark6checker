@@ -8,7 +8,7 @@ Every import is validated before replacing the loaded history: each record needs
 
 ## Estimation page
 
-[estimation.html](estimation.html) has eleven sections.
+[estimation.html](estimation.html) has twelve sections.
 
 ### 每個號碼的 5 期走勢
 
@@ -86,6 +86,12 @@ Automatically picks the latest loaded draw (`6` main numbers + `1` special numbe
 - **Per-number hits tables:** seven 1–49 grids (one for each main number and the special number in the latest draw) displaying both percentage and raw hit count `(hits)`, with click-to-inspect number popovers and per-trigger copying.
 
 These are historical follow-up frequencies rather than next-draw probabilities.
+
+### N−1 → N+1 跟進
+
+A separate **N−1跟進** page uses the loaded draw immediately before the latest result as its seven triggers, so the source is `full[1]` (`6` main numbers + `1` special number), while the current/latest result is `full[0]` (N). It evaluates completed historical two-draw pairs: whenever a trigger appears in an older draw, the target is the draw two positions newer in the chronological result stream, corresponding to N+1. For example, an occurrence of `2` in `2026-09-15` is paired with the `2026-09-19` draw, skipping `2026-09-17` as N.
+
+The page includes an independent percentage threshold (default `20%`), quick `14.3%` baseline and reset buttons, a combined shortlist ranked by matching triggers and pooled rate, and seven `1–49` hit tables with raw hit counts and copy actions. Main numbers and special numbers count on both trigger and target draws. Only completed historical pairs are used; the N−1 trigger draw has no future N+1 outcome yet, so it is not added to a denominator. Two draws are insufficient and show an explanatory empty state instead. These two-draw-lag frequencies are descriptive historical evidence, not validated next-draw probabilities.
 
 ### 號碼組合
 

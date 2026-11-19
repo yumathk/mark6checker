@@ -68,6 +68,9 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
 #nextHits .next-hits-grid th, #nextHits .next-hits-grid td { white-space: nowrap; }
 #nextHits .next-hits-summary th, #nextHits .next-hits-summary td { white-space: nowrap; }
 #nextHits .next-hits-sources { white-space: normal; min-width: 12rem; }
+#nMinusOneHits .next-hits-grid th, #nMinusOneHits .next-hits-grid td { white-space: nowrap; }
+#nMinusOneHits .next-hits-summary th, #nMinusOneHits .next-hits-summary td { white-space: nowrap; }
+#nMinusOneHits .next-hits-sources { white-space: normal; min-width: 12rem; }
 @media (max-width: 991.98px) {
   .table { font-size: 0.75rem; }
   .table th, .table td { padding: 0.2rem; white-space: nowrap; }
@@ -96,6 +99,7 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
         <li class="nav-item"><button type="button" class="nav-link" data-section="history" onclick="showSection('history')">所有歷史結果</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="monthly" onclick="showSection('monthly')">每月號碼走勢</button></li>
         <li class="nav-item"><button type="button" class="nav-link" data-section="nextHits" onclick="showSection('nextHits')">下期跟進</button></li>
+        <li class="nav-item"><button type="button" class="nav-link" data-section="nMinusOneHits" onclick="showSection('nMinusOneHits')">N−1跟進</button></li>
         <!-- <li class="nav-item"><button type="button" class="nav-link" data-section="pairs" onclick="showSection('pairs')">號碼組合</button></li> -->
         <!-- <li class="nav-item"><button type="button" class="nav-link" data-section="randomGroups" onclick="showSection('randomGroups')">隨機分組</button></li> -->
         <li class="nav-item"><button type="button" class="nav-link" data-section="wheel" onclick="showSection('wheel')">縮水注項</button></li>
@@ -277,7 +281,27 @@ main.container-fluid { min-width: 0; overflow-x: clip; }
     <div id="nextHitsTables"></div>
   </section>
 
-  <section id="
+  <section id="nMinusOneHits" class="d-none" data-panel="nMinusOneHits">
+    <h1 class="h5">N−1 跟進：用上一期推算下一期</h1>
+    <p class="small text-secondary mb-2">自動選取 N−1（已載入結果的上一期，6 個正選＋特別號），統計每次該號碼出現後隔兩期（N+1）的命中次數與百分比；觸發與目標均計入正選＋特別號。例如 2026-09-15 出現 2，會配對至 2026-09-19。隨機基準為 7/49（14.3%）；此表只描述歷史跟進，並非下期機率。</p>
+    <div id="nMinusOneLatest" class="mb-2"></div>
+    <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <div>
+        <label for="nMinusOneThreshold" class="form-label small mb-1">隔兩期出現率 ≥（%）</label>
+        <input id="nMinusOneThreshold" class="form-control form-control-sm" style="max-width: 7rem" type="text" inputmode="decimal" value="20" placeholder="20" oninput="renderNMinusOneHits()">
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setNMinusOneThreshold('14.3')">基準 14.3%</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setNMinusOneThreshold('20')">重設 20%</button>
+      <button id="nMinusOneCopy" type="button" class="btn btn-sm btn-outline-light" onclick="copyNMinusOneNumbers()" disabled>複製綜合達標號碼</button>
+    </div>
+    <div id="nMinusOneStatus" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+    <div id="nMinusOneCopyWrap" class="mb-3 d-none">
+      <input id="nMinusOneCopyText" class="form-control form-control-sm font-monospace" style="max-width: 28rem" type="text" readonly aria-label="N減1綜合達標逗號分隔號碼">
+    </div>
+    <div id="nMinusOneCombined" class="mb-4"></div>
+    <div id="nMinusOneTables"></div>
+  </section>
+
   <section id="pairs" class="d-none" data-panel="pairs">
     <h1 class="h5">號碼組合（最新30期，含特別號）</h1>
     <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
@@ -824,6 +848,7 @@ function render() {
   forecastData = null;
   renderMonthly();
   renderNextHits();
+  renderNMinusOneHits();
   if (!draws.length) return;
   const rows = Array.from({ length: 49 }, (_, index) => numberRow(index + 1))
     .map(row => ({ ...row, standard: standardOf(row.c30) }))
@@ -1598,6 +1623,8 @@ function renderMonthlyChart() {
 
 let nextHitsSummary = null;
 let nextHitsShortlistText = "";
+let nMinusOneHitsSummary = null;
+let nMinusOneShortlistText = "";
 
 function parseNextHitsThreshold() {
   const input = document.getElementById("nextHitsThreshold");
@@ -1608,6 +1635,20 @@ function parseNextHitsThreshold() {
     return { valid: false, message: "百分比門檻必須介乎 0 至 100。" };
   }
   return { valid: true, value, label: Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2))) };
+}
+
+function parseNMinusOneThreshold() {
+  const input = document.getElementById("nMinusOneThreshold");
+  const raw = input ? input.value.trim().replace(/[%％]$/, "").trim() : "20";
+  if (!raw) return { valid: false, message: "請輸入 0 至 100 的百分比，例如 20 或 14.3。" };
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) return { valid: false, message: "百分比門檻必須介乎 0 至 100。" };
+  return { valid: true, value, label: Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2))) };
+}
+
+function setNMinusOneThreshold(value) {
+  document.getElementById("nMinusOneThreshold").value = String(value);
+  renderNMinusOneHits();
 }
 
 function setNextHitsThreshold(value) {
@@ -1621,20 +1662,20 @@ function nextHitsMeetsThreshold(hits, samples, threshold) {
   return samples > 0 && hits * 100 + 1e-9 >= threshold * samples;
 }
 
-function summarizeNextHits(data) {
-  if (!Array.isArray(data) || data.length < 2) return null;
-  const latest = data[0];
+function summarizeFollowupHits(data, sourceIndex, lag) {
+  if (!Array.isArray(data) || !Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= data.length || !Number.isInteger(lag) || lag < 1 || data.length <= Math.max(sourceIndex, lag)) return null;
+  const source = data[sourceIndex];
   const triggers = [
-    ...latest.numbers.map(number => ({ number, role: "正選" })),
-    { number: latest.special, role: "特別號" }
+    ...source.numbers.map(number => ({ number, role: "正選" })),
+    { number: source.special, role: "特別號" }
   ];
   const triggerResults = triggers.map(({ number, role }) => {
     let samples = 0;
     const counts = Array(50).fill(0);
-    for (let index = 1; index < data.length; index++) {
+    for (let index = lag; index < data.length; index++) {
       if (!ballsOf(data[index]).includes(number)) continue;
       samples++;
-      ballsOf(data[index - 1]).forEach(nextBall => counts[nextBall]++);
+      ballsOf(data[index - lag]).forEach(nextBall => counts[nextBall]++);
     }
     const rows = Array.from({ length: 49 }, (_, offset) => {
       const candidate = offset + 1;
@@ -1675,15 +1716,27 @@ function summarizeNextHits(data) {
     };
   });
   return {
-    latestDate: latest.date,
+    latestDate: data[0].date,
+    sourceDate: source.date,
+    sourceIndex,
+    lag,
     drawCount: data.length,
-    followPairs: data.length - 1,
+    followPairs: Math.max(0, data.length - lag),
     triggers: triggerResults,
     combined
   };
 }
 
-function renderNextHitsGrid(trigger, thresholdValid, threshold) {
+function summarizeNextHits(data) {
+  return summarizeFollowupHits(data, 0, 1);
+}
+
+function summarizeNMinusOneHits(data) {
+  return summarizeFollowupHits(data, 1, 2);
+}
+
+function renderNextHitsGrid(trigger, thresholdValid, threshold, lag = 1) {
+  const followLabel = lag === 1 ? "緊接下一期" : `隔${lag}期（N+1）`;
   const head = `<thead><tr>${Array.from({ length: 5 }, () => `<th scope="col">#</th><th scope="col">命中% (次)</th>`).join("")}</tr></thead>`;
   const rows = Array.from({ length: 10 }, (_, rowIndex) => {
     const cells = Array.from({ length: 5 }, (_, colIndex) => {
@@ -1693,13 +1746,13 @@ function renderNextHitsGrid(trigger, thresholdValid, threshold) {
       const match = thresholdValid && nextHitsMeetsThreshold(stat.hits, stat.samples, threshold);
       const pctText = stat.pct === null ? "—" : `${stat.pct.toFixed(1)}%`;
       const title = stat.samples
-        ? `號碼 ${trigger.number} 出現的 ${stat.samples} 期後，緊接下一期開出 ${number}：${stat.hits}/${stat.samples} 次（${pctText}）；計正選＋特別號`
+        ? `號碼 ${trigger.number} 出現的 ${stat.samples} 期中，${followLabel}開出 ${number}：${stat.hits}/${stat.samples} 次（${pctText}）；計正選＋特別號`
         : `號碼 ${trigger.number} 在較早歷史未出現`;
       return `<th scope="row">${numCell(number, true)}</th><td class="${match ? "next-hit-match" : ""}" title="${title}">${pctText} <small class="${match ? "" : "text-secondary"}">(${stat.hits})</small></td>`;
     }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
-  return `<div class="table-responsive"><table class="table table-sm table-bordered align-middle text-center mb-0 next-hits-grid" aria-label="號碼 ${trigger.number} 下期跟進 1 至 49 命中表">${head}<tbody>${rows}</tbody></table></div>`;
+  return `<div class="table-responsive"><table class="table table-sm table-bordered align-middle text-center mb-0 next-hits-grid" aria-label="號碼 ${trigger.number} ${followLabel} 1 至 49 命中表">${head}<tbody>${rows}</tbody></table></div>`;
 }
 
 function renderNextHits() {
@@ -1838,6 +1891,128 @@ async function copyTriggerNextHits(triggerNumber) {
       field.select();
     }
     statusBox.textContent = `無法自動複製號碼 ${triggerNumber} 達標結果，已在上方文字框選取。`;
+  }
+}
+
+function renderNMinusOneHits() {
+  const latestBox = document.getElementById("nMinusOneLatest");
+  const statusBox = document.getElementById("nMinusOneStatus");
+  const copyBtn = document.getElementById("nMinusOneCopy");
+  const copyWrap = document.getElementById("nMinusOneCopyWrap");
+  const copyText = document.getElementById("nMinusOneCopyText");
+  const combinedBox = document.getElementById("nMinusOneCombined");
+  const tablesBox = document.getElementById("nMinusOneTables");
+  if (!latestBox || !statusBox || !combinedBox || !tablesBox) return;
+
+  nMinusOneHitsSummary = summarizeNMinusOneHits(full);
+  nMinusOneShortlistText = "";
+  copyBtn.disabled = true;
+  copyWrap.classList.add("d-none");
+  copyText.value = "";
+  if (!nMinusOneHitsSummary) {
+    latestBox.innerHTML = "";
+    combinedBox.innerHTML = "";
+    tablesBox.innerHTML = "";
+    statusBox.textContent = full.length ? `需要最少 3 期結果才能統計 N−1 → N+1；目前 ${full.length} 期。` : "尚未載入結果。";
+    return;
+  }
+
+  const parsed = parseNMinusOneThreshold();
+  const threshold = parsed.valid ? parsed.value : null;
+  const chips = nMinusOneHitsSummary.triggers.map(trigger =>
+    `<span class="badge text-bg-dark border border-secondary px-2 py-1">${numCell(trigger.number, true)}<small class="text-secondary ms-1">${trigger.role}</small></span>`
+  ).join("");
+  latestBox.innerHTML = `<div class="d-flex flex-wrap align-items-center gap-2"><strong class="small">N−1（${nMinusOneHitsSummary.sourceDate}）：</strong>${chips}<span class="small text-secondary">N 是 ${nMinusOneHitsSummary.latestDate}；統計每次觸發後隔兩期（N+1）結果。</span></div>`;
+
+  let combinedHtml = "";
+  if (!parsed.valid) {
+    statusBox.textContent = parsed.message;
+  } else {
+    const shortlisted = nMinusOneHitsSummary.combined.map(item => ({
+      ...item,
+      matched: item.byTrigger.filter(entry => nextHitsMeetsThreshold(entry.hits, entry.samples, threshold))
+    })).filter(item => item.matched.length > 0).sort((first, second) =>
+      second.matched.length - first.matched.length ||
+      (second.pooledPct ?? -1) - (first.pooledPct ?? -1) ||
+      second.totalHits - first.totalHits ||
+      first.number - second.number
+    );
+    const uniqueNumbers = shortlisted.map(item => item.number).sort((first, second) => first - second);
+    nMinusOneShortlistText = uniqueNumbers.join(",");
+    copyBtn.disabled = !uniqueNumbers.length;
+    copyWrap.classList.toggle("d-none", !uniqueNumbers.length);
+    copyText.value = nMinusOneShortlistText;
+    statusBox.textContent = uniqueNumbers.length
+      ? `門檻 ≥ ${parsed.label}%：共有 ${uniqueNumbers.length} 個號碼由 N−1 的 7 個號碼觸發後隔兩期達標（升冪：${nMinusOneShortlistText}）。`
+      : `門檻 ≥ ${parsed.label}%：N−1 的 7 個號碼中，暫無隔兩期跟進達標。`;
+    const usableTriggers = nMinusOneHitsSummary.triggers.filter(item => item.samples > 0).length;
+    const body = shortlisted.length ? shortlisted.map(item => {
+      const sources = item.matched.sort((first, second) => (second.pct ?? -1) - (first.pct ?? -1) || first.trigger - second.trigger)
+        .map(entry => `${entry.trigger}${entry.role === "特別號" ? "(特)" : ""}：${entry.pct.toFixed(1)}% (${entry.hits}/${entry.samples})`)
+        .join("、");
+      const pooled = item.pooledPct === null ? "—" : `${item.pooledPct.toFixed(1)}% (${item.totalHits}/${item.totalSamples})`;
+      return `<tr><td>${numCell(item.number, true)}</td><td class="up">${item.matched.length} / ${usableTriggers}</td><td>${pooled}</td><td class="text-start next-hits-sources">${sources}</td></tr>`;
+    }).join("") : `<tr><td colspan="4" class="text-secondary">沒有號碼達到 ≥ ${parsed.label}%。</td></tr>`;
+    combinedHtml = `<h2 class="h6 mb-2">N+1 綜合達標彙總（≥ ${parsed.label}%）</h2><div class="table-responsive"><table class="table table-sm table-bordered align-middle text-center mb-0 next-hits-summary"><thead><tr><th scope="col">號碼</th><th scope="col">達標來源數</th><th scope="col">綜合隔兩期率</th><th scope="col" class="text-start">達標來源明細</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+  combinedBox.innerHTML = combinedHtml;
+
+  tablesBox.innerHTML = nMinusOneHitsSummary.triggers.map(trigger => {
+    const matched = parsed.valid ? trigger.rows
+      .filter(row => nextHitsMeetsThreshold(row.hits, row.samples, threshold))
+      .sort((first, second) => second.pct - first.pct || second.hits - first.hits || first.number - second.number) : [];
+    const matchedSummary = !trigger.samples
+      ? `<span class="text-secondary">此號碼在可配對歷史未出現，暫無 N+1 紀錄。</span>`
+      : !parsed.valid
+        ? `<span class="text-secondary">請輸入有效百分比門檻以高亮達標號碼。</span>`
+        : matched.length
+          ? matched.map(row => `<span class="badge text-bg-dark border border-success me-1 mb-1">${numCell(row.number, true)} <span class="up">${row.pct.toFixed(1)}%</span> <small class="text-secondary">(${row.hits}/${row.samples})</small></span>`).join("")
+          : `<span class="text-secondary">沒有號碼達到 ≥ ${parsed.label}%。</span>`;
+    const copyTriggerBtn = parsed.valid && matched.length
+      ? `<button type="button" class="btn btn-sm btn-outline-light" onclick="copyNMinusOneTrigger(${trigger.number})">複製此組 (${matched.length})</button>`
+      : "";
+    return `<div class="card mb-3"><div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2"><div><strong>號碼 ${trigger.number}（${trigger.role}）</strong><span class="small text-secondary ms-2">可配對樣本 ${trigger.samples} 期${parsed.valid ? ` · ≥ ${parsed.label}% 共 ${matched.length} 個` : ""}</span></div>${copyTriggerBtn}</div><div class="card-body"><div class="mb-2 d-flex flex-wrap align-items-center gap-1">${matchedSummary}</div>${renderNextHitsGrid(trigger, parsed.valid, threshold, 2)}</div></div>`;
+  }).join("");
+}
+
+async function copyNMinusOneNumbers() {
+  if (!nMinusOneShortlistText) return;
+  const status = document.getElementById("nMinusOneStatus");
+  try {
+    await writeClipboardText(nMinusOneShortlistText);
+    status.textContent = `已複製 N+1 綜合達標號碼：${nMinusOneShortlistText}`;
+  } catch (error) {
+    const wrap = document.getElementById("nMinusOneCopyWrap");
+    const field = document.getElementById("nMinusOneCopyText");
+    wrap.classList.remove("d-none");
+    field.value = nMinusOneShortlistText;
+    field.focus();
+    field.select();
+    status.textContent = "無法自動複製，已選取 N+1 達標號碼，可手動複製。";
+  }
+}
+
+async function copyNMinusOneTrigger(triggerNumber) {
+  if (!nMinusOneHitsSummary) return;
+  const parsed = parseNMinusOneThreshold();
+  if (!parsed.valid) return;
+  const trigger = nMinusOneHitsSummary.triggers.find(item => item.number === triggerNumber);
+  if (!trigger) return;
+  const text = trigger.rows.filter(row => nextHitsMeetsThreshold(row.hits, row.samples, parsed.value))
+    .map(row => row.number).sort((first, second) => first - second).join(",");
+  if (!text) return;
+  const status = document.getElementById("nMinusOneStatus");
+  try {
+    await writeClipboardText(text);
+    status.textContent = `已複製號碼 ${triggerNumber} 的 N+1 達標（≥ ${parsed.label}%）：${text}`;
+  } catch (error) {
+    const wrap = document.getElementById("nMinusOneCopyWrap");
+    const field = document.getElementById("nMinusOneCopyText");
+    wrap.classList.remove("d-none");
+    field.value = text;
+    field.focus();
+    field.select();
+    status.textContent = `無法自動複製號碼 ${triggerNumber} 的結果，已在上方文字框選取。`;
   }
 }
 
